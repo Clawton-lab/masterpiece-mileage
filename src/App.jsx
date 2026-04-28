@@ -39,7 +39,7 @@ function Nav({ tab, set, isAdmin }) {
 export default function App() {
   const [user, setUser] = useState(null); const [mode, setMode] = useState("login");
   const [aName, setAN] = useState(""); const [aPin, setAP] = useState(""); const [aEmail, setAE] = useState(""); const [aErr, setAErr] = useState("");
-  const [mats, setMats] = useState([]); const [projs, setProjs] = useState([]); const [txns, setTxns] = useState([]); const [tools, setTools] = useState([]); const [cos, setCos] = useState([]); const [cats, setCats] = useState([]); const [users, setUsers] = useState([]); const [urgRpts, setUrgRpts] = useState([]); const [trips, setTrips] = useState([]); const [milSet, setMilSet] = useState(null);
+  const [mats, setMats] = useState([]); const [projs, setProjs] = useState([]); const [txns, setTxns] = useState([]); const [tools, setTools] = useState([]); const [cos, setCos] = useState([]); const [cats, setCats] = useState([]); const [users, setUsers] = useState([]); const [urgRpts, setUrgRpts] = useState([]);
   const [tab, setTab] = useState("yard"); const [search, setSrch] = useState(""); const [fCat, setFC] = useState("All");
   const [toast, setToast] = useState({ m: "", s: false }); const [loaded, setLoaded] = useState(false);
   const [txnMod, setTxnMod] = useState({ o: false, m: "take", mat: null });
@@ -58,7 +58,6 @@ export default function App() {
   const [emailMod, setEM] = useState(false); const [emailTo, setET] = useState("");
   const [retCond, setRetCond] = useState("Good"); const [retNote, setRetNote] = useState("");
   const [urgType, setUrgType] = useState("All"); const [urgStart, setUrgStart] = useState(""); const [urgEnd, setUrgEnd] = useState("");
-  const [milUser, setMilUser] = useState("All"); const [milStart, setMilStart] = useState(""); const [milEnd, setMilEnd] = useState(""); const [milStatus, setMilStatus] = useState("All");
 
   const show = useCallback(m => { setToast({ m, s: true }); setTimeout(() => setToast(t => ({ ...t, s: false })), 2800); }, []);
   const isA = user && RO[user.role] >= 2;
@@ -66,8 +65,8 @@ export default function App() {
 
   const load = useCallback(async () => {
     try {
-      const [a, b, c, d, e, f, g, h, i, j] = await Promise.all([api("materials?order=name"), api("projects?order=name"), api("transactions?order=created_at.desc&limit=200"), api("tools?order=name"), api("tool_checkouts?order=checked_out_at.desc&limit=200"), api("categories?order=sort_order"), api("yard_users?order=name"), api("urgent_reports?order=created_at.desc&limit=200"), api("trips?order=trip_date.desc"), api("mileage_settings?limit=1")]);
-      setMats(a); setProjs(b); setTxns(c); setTools(d); setCos(e); setCats(f); setUsers(g); setUrgRpts(h); setTrips(i); setMilSet(j?.[0] || null);
+      const [a, b, c, d, e, f, g, h] = await Promise.all([api("materials?order=name"), api("projects?order=name"), api("transactions?order=created_at.desc&limit=200"), api("tools?order=name"), api("tool_checkouts?order=checked_out_at.desc&limit=200"), api("categories?order=sort_order"), api("yard_users?order=name"), api("urgent_reports?order=created_at.desc&limit=200")]);
+      setMats(a); setProjs(b); setTxns(c); setTools(d); setCos(e); setCats(f); setUsers(g); setUrgRpts(h);
     } catch (e) { console.error(e); }
     setLoaded(true);
   }, []);
@@ -210,36 +209,6 @@ export default function App() {
     show("Opening email"); 
   };
 
-  const filteredTrips = trips.filter(t => {
-    if (milUser !== "All" && t.user_name !== milUser) return false;
-    if (milStatus !== "All" && t.status !== milStatus) return false;
-    if (milStart && t.trip_date < milStart) return false;
-    if (milEnd && t.trip_date > milEnd) return false;
-    return true;
-  });
-  const tripsByUser = {};
-  filteredTrips.forEach(t => { if (!tripsByUser[t.user_name]) tripsByUser[t.user_name] = []; tripsByUser[t.user_name].push(t); });
-  const milTotals = Object.entries(tripsByUser).map(([name, ts]) => ({ name, trips: ts.length, miles: ts.reduce((s, t) => s + (t.miles || 0), 0), reimb: ts.reduce((s, t) => s + (t.reimbursement || 0), 0) })).sort((a, b) => b.miles - a.miles);
-  const milGrandMiles = milTotals.reduce((s, u) => s + u.miles, 0);
-  const milGrandReimb = milTotals.reduce((s, u) => s + u.reimb, 0);
-
-  const milCSV = () => { const r = [["Employee", "Date", "From", "To", "Miles", "Reimbursement", "Status", "Note"]]; filteredTrips.forEach(t => r.push([t.user_name, t.trip_date, `${t.from_project_name} (${t.from_address})`, `${t.to_project_name} (${t.to_address})`, t.miles, t.reimbursement?.toFixed(2), t.status, t.note || ""])); return r.map(x => x.map(c => `"${c}"`).join(",")).join("\n"); };
-  const dlMilCSV = () => { const b = new Blob([milCSV()], { type: "text/csv" }); const u = URL.createObjectURL(b); const a = document.createElement("a"); a.href = u; a.download = `mileage-report-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(u); show("Downloaded"); };
-
-  const emailMileage = () => {
-    if (!emailTo.trim()) return;
-    const userSections = milTotals.map(u => {
-      const uTrips = tripsByUser[u.name];
-      return `<div style="margin-bottom:24px"><div style="background:#fff;border-radius:12px;border:1px solid #e5e0d8;overflow:hidden"><div style="padding:16px 20px;background:#faf8f5;border-bottom:2px solid #c4b59a;display:flex;justify-content:space-between;align-items:center"><div style="font-weight:700;font-size:16px;font-family:Georgia,serif;color:#1a1a1a">${u.name}</div><div style="text-align:right"><span style="font-size:20px;font-weight:700;font-family:Georgia,serif;color:#c41e2a">${u.miles}</span><span style="font-size:12px;color:#6b6560"> mi</span><span style="margin-left:12px;font-size:16px;font-weight:700;font-family:Georgia,serif;color:#16a34a">$${u.reimb.toFixed(2)}</span></div></div><table style="width:100%;border-collapse:collapse"><thead><tr><th style="padding:10px 12px;text-align:left;font-size:10px;color:#6b6560;text-transform:uppercase;letter-spacing:1px;font-weight:700;border-bottom:1px solid #e5e0d8;font-family:monospace">Date</th><th style="padding:10px 12px;text-align:left;font-size:10px;color:#6b6560;text-transform:uppercase;letter-spacing:1px;font-weight:700;border-bottom:1px solid #e5e0d8;font-family:monospace">From</th><th style="padding:10px 12px;text-align:left;font-size:10px;color:#6b6560;text-transform:uppercase;letter-spacing:1px;font-weight:700;border-bottom:1px solid #e5e0d8;font-family:monospace">To</th><th style="padding:10px 12px;text-align:right;font-size:10px;color:#6b6560;text-transform:uppercase;letter-spacing:1px;font-weight:700;border-bottom:1px solid #e5e0d8;font-family:monospace">Miles</th><th style="padding:10px 12px;text-align:right;font-size:10px;color:#6b6560;text-transform:uppercase;letter-spacing:1px;font-weight:700;border-bottom:1px solid #e5e0d8;font-family:monospace">Reimb.</th></tr></thead><tbody>${uTrips.map(t => `<tr><td style="padding:10px 12px;border-bottom:1px solid #f0ece6;font-size:13px;color:#1a1a1a">${new Date(t.trip_date + 'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}</td><td style="padding:10px 12px;border-bottom:1px solid #f0ece6;font-size:13px"><span style="font-weight:600">${t.from_project_name}</span><br><span style="font-size:11px;color:#9c9590">${t.from_address}</span></td><td style="padding:10px 12px;border-bottom:1px solid #f0ece6;font-size:13px"><span style="font-weight:600">${t.to_project_name}</span><br><span style="font-size:11px;color:#9c9590">${t.to_address}</span></td><td style="padding:10px 12px;border-bottom:1px solid #f0ece6;text-align:right;font-weight:700;font-family:Georgia,serif">${t.miles}</td><td style="padding:10px 12px;border-bottom:1px solid #f0ece6;text-align:right;font-weight:600;color:#16a34a">$${(t.reimbursement||0).toFixed(2)}</td></tr>`).join('')}</tbody></table></div></div>`;
-    }).join('');
-    const dateRange = milStart || milEnd ? `${milStart || 'Start'} — ${milEnd || 'Present'}` : 'All Dates';
-    const html = `<!DOCTYPE html><html><head><style>body{font-family:system-ui,-apple-system,sans-serif;line-height:1.6;color:#1a1a1a;max-width:800px;margin:0 auto;background:#faf8f5;padding:20px}@media print{body{background:#fff;padding:0}}</style></head><body><div style="background:#fff;border-top:4px solid #c4b59a;border-radius:12px;padding:24px;margin-bottom:20px;border:1px solid #e5e0d8;text-align:center"><div style="display:flex;height:4px;border-radius:4px;overflow:hidden;margin-bottom:16px;max-width:200px;margin-left:auto;margin-right:auto"><div style="flex:1;background:#c4b59a"></div><div style="flex:1;background:#c41e2a"></div><div style="flex:1;background:#1a1a1a"></div></div><h1 style="margin:0;font-family:Georgia,serif;font-size:24px;color:#1a1a1a">Masterpiece</h1><div style="font-size:11px;color:#c41e2a;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-top:4px">Mileage Report</div><div style="font-size:12px;color:#9c9590;margin-top:8px">${dateRange} · IRS Rate: $${milSet?.irs_rate || 0.70}/mi</div></div><div style="display:flex;gap:12px;margin-bottom:20px"><div style="flex:1;background:#fff;border-radius:12px;padding:16px;border:1px solid #e5e0d8;border-left:4px solid #c4b59a"><div style="font-size:10px;color:#6b6560;text-transform:uppercase;letter-spacing:1px;font-weight:700;font-family:monospace">Total Miles</div><div style="font-size:28px;font-weight:700;font-family:Georgia,serif;color:#1a1a1a">${milGrandMiles}</div></div><div style="flex:1;background:#fff;border-radius:12px;padding:16px;border:1px solid #e5e0d8;border-left:4px solid #c41e2a"><div style="font-size:10px;color:#6b6560;text-transform:uppercase;letter-spacing:1px;font-weight:700;font-family:monospace">Total Reimbursement</div><div style="font-size:28px;font-weight:700;font-family:Georgia,serif;color:#16a34a">$${milGrandReimb.toFixed(2)}</div></div><div style="flex:1;background:#fff;border-radius:12px;padding:16px;border:1px solid #e5e0d8;border-left:4px solid #1a1a1a"><div style="font-size:10px;color:#6b6560;text-transform:uppercase;letter-spacing:1px;font-weight:700;font-family:monospace">Employees</div><div style="font-size:28px;font-weight:700;font-family:Georgia,serif;color:#1a1a1a">${milTotals.length}</div></div></div>${userSections}<div style="text-align:center;margin-top:24px;font-size:12px;color:#9c9590">Generated ${new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})} · Masterpiece Outdoor Living</div></body></html>`;
-    const rptEmails = users.filter(u => u.receives_reports).map(u => u.email).join(",");
-    window.open(`mailto:${rptEmails || emailTo.trim()}?subject=${encodeURIComponent("Masterpiece Mileage Report" + (milStart ? ` ${milStart}` : "") + (milEnd ? ` to ${milEnd}` : ""))}&body=${encodeURIComponent(html)}`, "_blank");
-    setEM(false);
-    show("Opening email");
-  };
-
   const css = `@import url('https://fonts.googleapis.com/css2?family=Bitter:wght@400;600;700&family=Source+Sans+3:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}@keyframes fadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}*{box-sizing:border-box}input:focus,select:focus{border-color:${P.r}!important}`;
 
   if (!user) return <div style={{ minHeight: "100vh", background: P.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, fontFamily: F.b }}><style>{css}</style>
@@ -376,7 +345,7 @@ export default function App() {
 
         {adAuth && adPg === "hub" && <div>
           <h2 style={{ fontFamily: F.h, fontSize: 20, fontWeight: 700, margin: "0 0 20px" }}>Admin</h2>
-          {[{ k: "reports", l: "Inventory Report", d: "View & export inventory", c: P.r }, { k: "mileage", l: "Mileage Report", d: "Trips grouped by employee", c: P.tn }, { k: "urgent", l: "Urgent Reports", d: "Critical events log", c: P.r }, { k: "employees", l: "Employees", d: "Manage team", c: P.bk }, { k: "categories", l: "Categories", d: "Add & remove categories", c: P.tn }].map(p =>
+          {[{ k: "reports", l: "Inventory Report", d: "View & export inventory", c: P.r }, { k: "urgent", l: "Urgent Reports", d: "Critical events log", c: P.r }, { k: "employees", l: "Employees", d: "Manage team", c: P.bk }, { k: "categories", l: "Categories", d: "Add & remove categories", c: P.tn }].map(p =>
             <button key={p.k} onClick={() => setAdPg(p.k)} style={{ display: "block", width: "100%", textAlign: "left", padding: "16px 20px", background: "#fff", borderRadius: 14, border: `1px solid ${P.bd}`, borderLeft: `4px solid ${p.c}`, marginBottom: 10, cursor: "pointer", fontFamily: F.b }}><div style={{ fontWeight: 700, fontSize: 16 }}>{p.l}</div><div style={{ fontSize: 13, color: P.l, marginTop: 4 }}>{p.d}</div></button>)}
         </div>}
 
@@ -418,45 +387,6 @@ export default function App() {
             <div style={{ fontSize: 13, color: P.m, whiteSpace: "pre-wrap" }}>{r.message}</div>
             <div style={{ fontSize: 12, color: P.l, marginTop: 4, fontFamily: F.m }}>by {r.user_name}</div>
           </div>)}
-        </div>}
-
-        {adAuth && adPg === "mileage" && <div>
-          <button onClick={() => setAdPg("hub")} style={{ background: "none", border: "none", cursor: "pointer", color: P.r, fontSize: 14, fontWeight: 600, marginBottom: 16, fontFamily: F.b }}>← Admin</button>
-          <h2 style={{ fontFamily: F.h, fontSize: 20, fontWeight: 700, margin: "0 0 16px" }}>Mileage Report</h2>
-          <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-            <select value={milUser} onChange={e => setMilUser(e.target.value)} style={{ ...iS, flex: 1 }}><option value="All">All Employees</option>{[...new Set(trips.map(t => t.user_name))].sort().map(n => <option key={n} value={n}>{n}</option>)}</select>
-            <select value={milStatus} onChange={e => setMilStatus(e.target.value)} style={{ ...iS, flex: 1 }}><option value="All">All Status</option><option value="logged">Logged</option><option value="approved">Approved</option></select>
-          </div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-            <input type="date" value={milStart} onChange={e => setMilStart(e.target.value)} style={{ ...iS, flex: 1 }} />
-            <input type="date" value={milEnd} onChange={e => setMilEnd(e.target.value)} style={{ ...iS, flex: 1 }} />
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
-            <div style={{ background: "#fff", borderRadius: 10, padding: 12, border: `1px solid ${P.bd}`, borderLeft: `3px solid ${P.tn}` }}><div style={{ fontSize: 9, fontFamily: F.m, color: P.l, textTransform: "uppercase" }}>Miles</div><div style={{ fontSize: 22, fontWeight: 700, fontFamily: F.h }}>{milGrandMiles}</div></div>
-            <div style={{ background: "#fff", borderRadius: 10, padding: 12, border: `1px solid ${P.bd}`, borderLeft: `3px solid ${P.g}` }}><div style={{ fontSize: 9, fontFamily: F.m, color: P.l, textTransform: "uppercase" }}>Reimb.</div><div style={{ fontSize: 22, fontWeight: 700, fontFamily: F.h, color: P.g }}>${milGrandReimb.toFixed(2)}</div></div>
-            <div style={{ background: "#fff", borderRadius: 10, padding: 12, border: `1px solid ${P.bd}`, borderLeft: `3px solid ${P.r}` }}><div style={{ fontSize: 9, fontFamily: F.m, color: P.l, textTransform: "uppercase" }}>Trips</div><div style={{ fontSize: 22, fontWeight: 700, fontFamily: F.h }}>{filteredTrips.length}</div></div>
-          </div>
-          <div style={{ display: "flex", gap: 8, marginBottom: 16 }}><Btn small color={P.bk} onClick={dlMilCSV}>Download CSV</Btn><Btn small onClick={() => { setET(""); setEM(true); }}>Email Report</Btn></div>
-          {milTotals.map(u => <div key={u.name} style={{ background: "#fff", borderRadius: 14, border: `1px solid ${P.bd}`, marginBottom: 12, overflow: "hidden" }}>
-            <div style={{ padding: "12px 16px", background: P.bg, borderBottom: `2px solid ${P.tn}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontWeight: 700, fontSize: 16, fontFamily: F.h }}>{u.name}</div>
-              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                <span style={{ fontSize: 18, fontWeight: 700, fontFamily: F.h, color: P.r }}>{u.miles}<span style={{ fontSize: 11, color: P.m, fontWeight: 400 }}> mi</span></span>
-                <span style={{ fontSize: 15, fontWeight: 700, fontFamily: F.h, color: P.g }}>${u.reimb.toFixed(2)}</span>
-              </div>
-            </div>
-            {tripsByUser[u.name].map(t => <div key={t.id} style={{ padding: "10px 16px", borderBottom: `1px solid ${P.bdL}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13 }}><strong>{t.from_project_name}</strong> <span style={{ color: P.l }}>→</span> <strong>{t.to_project_name}</strong></div>
-                <div style={{ fontSize: 11, color: P.l, fontFamily: F.m }}>{new Date(t.trip_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · <span style={{ color: t.status === "approved" ? P.g : P.am, textTransform: "capitalize" }}>{t.status}</span></div>
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <div style={{ fontWeight: 700, fontFamily: F.h }}>{t.miles} mi</div>
-                <div style={{ fontSize: 12, color: P.g, fontWeight: 600 }}>${(t.reimbursement || 0).toFixed(2)}</div>
-              </div>
-            </div>)}
-          </div>)}
-          {milTotals.length === 0 && <div style={{ padding: 40, textAlign: "center", color: P.l, fontFamily: F.m }}>No trips found</div>}
         </div>}
 
         {adAuth && adPg === "employees" && <div>
@@ -530,7 +460,7 @@ export default function App() {
 
     <Modal open={emailMod} onClose={() => setEM(false)} title="Email Report">
       <Fl l="Send to"><input style={iS} type="email" value={emailTo} onChange={e => setET(e.target.value)} placeholder="payroll@masterpiecelv.com" /></Fl>
-      <Btn full disabled={!emailTo.trim()} onClick={adPg === "urgent" ? emailUrg : adPg === "mileage" ? emailMileage : emailRpt}>Send</Btn>
+      <Btn full disabled={!emailTo.trim()} onClick={adPg === "urgent" ? emailUrg : emailRpt}>Send</Btn>
     </Modal>
 
     <Modal open={!!delUserMod} onClose={() => setDUM(null)} title="Delete Employee?">
