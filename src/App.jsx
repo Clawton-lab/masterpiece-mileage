@@ -17,26 +17,44 @@ async function api(path, opts = {}) {
 }
 
 async function geocode(address) {
-  const r = await fetch(
-    `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-      address
-    )}&limit=1`
-  );
-  const d = await r.json();
-  if (!d || d.length === 0) return null;
-  return { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) };
+  try {
+    await new Promise(r => setTimeout(r, 200));
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+        address
+      )}&limit=1`,
+      { headers: { "User-Agent": "MasterpieceMileageApp/1.0" } }
+    );
+    if (!r.ok) throw new Error(`Geocoding failed: ${r.status}`);
+    const d = await r.json();
+    if (!d || d.length === 0) throw new Error("Address not found");
+    return { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) };
+  } catch (e) {
+    console.error("Geocode error:", e);
+    return null;
+  }
 }
 
 async function getDrivingMiles(from, to) {
-  const a = await geocode(from);
-  const b = await geocode(to);
-  if (!a || !b) return null;
-  const r = await fetch(
-    `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=false`
-  );
-  const d = await r.json();
-  if (d.code !== "Ok" || !d.routes || d.routes.length === 0) return null;
-  return Math.round(d.routes[0].distance * 0.000621371 * 10) / 10;
+  try {
+    const a = await geocode(from);
+    if (!a) throw new Error(`Could not geocode: ${from}`);
+    await new Promise(r => setTimeout(r, 200));
+    const b = await geocode(to);
+    if (!b) throw new Error(`Could not geocode: ${to}`);
+    await new Promise(r => setTimeout(r, 200));
+    const r = await fetch(
+      `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=false`
+    );
+    if (!r.ok) throw new Error(`Routing failed: ${r.status}`);
+    const d = await r.json();
+    if (d.code !== "Ok" || !d.routes || d.routes.length === 0)
+      throw new Error(`No route found: ${d.code || "unknown error"}`);
+    return Math.round(d.routes[0].distance * 0.000621371 * 10) / 10;
+  } catch (e) {
+    console.error("Mileage calculation error:", e);
+    return null;
+  }
 }
 
 function getPayPeriod(date, anchor) {
@@ -433,6 +451,12 @@ export default function App() {
   const [euE, setEUE] = useState("");
   const [euP, setEUP] = useState("");
   const [delUserMod, setDUM] = useState(null);
+  const [rptAuth, setRptAuth] = useState(false);
+  const [raName, setRAN] = useState("");
+  const [raPin, setRAP] = useState("");
+  const [raErr, setRAE] = useState("");
+  const [emailMod, setEmailMod] = useState(false);
+  const [emailTo, setEmailTo] = useState("");
 
   const show = useCallback(m => {
     setToast({ m, s: true });
@@ -769,7 +793,56 @@ export default function App() {
     show("Report downloaded");
   };
 
-  const css = `@import url('https://fonts.googleapis.com/css2?family=Bitter:wght@400;600;700&family=Source+Sans+3:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}@keyframes fadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}*{box-sizing:border-box}input:focus,select:focus{border-color:${P.red}!important}`;
+  const printReport = () => {
+    window.print();
+  };
+
+  const emailReport = async () => {
+    if (!emailTo.trim()) {
+      show("Enter email address");
+      return;
+    }
+    const rows = [
+      [
+        "Date",
+        "Employee",
+        "From",
+        "To",
+        "Miles",
+        "IRS Rate",
+        "Reimbursement",
+        "Status"
+      ]
+    ];
+    reportTrips.forEach(t =>
+      rows.push([
+        t.trip_date,
+        t.user_name,
+        t.from_project_name,
+        t.to_project_name,
+        t.miles,
+        `$${t.irs_rate}`,
+        `$${Number(t.reimbursement).toFixed(2)}`,
+        t.status
+      ])
+    );
+    const csv = rows.map(r => r.join(",")).join("\n");
+    
+    try {
+      const subject = `Mileage Report - ${reportPeriod === 'current' ? 'Current Pay Period' : reportPeriod === 'ytd' ? 'Year to Date' : 'All Time'}`;
+      const body = `Mileage Report\n\nPeriod: ${reportPeriod === 'current' ? `${fmtDate(pp.start)} - ${fmtDate(pp.end)}` : reportPeriod === 'ytd' ? `${thisYear()} YTD` : 'All Time'}\n${reportUser !== 'all' ? `Employee: ${users.find(u => u.id === reportUser)?.name}\n` : ''}Total Miles: ${reportMiles.toFixed(1)}\nTotal Reimbursement: $${reportReimb.toFixed(2)}\nTrips: ${reportTrips.length}\n\nCSV Report attached below:\n\n${csv}`;
+      
+      const mailto = `mailto:${emailTo.trim()}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      window.location.href = mailto;
+      setEmailMod(false);
+      setEmailTo("");
+      show("Email client opened");
+    } catch (e) {
+      show("Error opening email");
+    }
+  };
+
+  const css = `@import url('https://fonts.googleapis.com/css2?family=Bitter:wght@400;600;700&family=Source+Sans+3:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}@keyframes fadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}*{box-sizing:border-box}input:focus,select:focus{border-color:${P.red}!important}@media print{nav,button,.no-print{display:none!important}}`;
 
   if (!user)
     return (
@@ -1011,6 +1084,9 @@ export default function App() {
               setAP("");
               setAdAuth(false);
               setAdPg("hub");
+              setRptAuth(false);
+              setRAN("");
+              setRAP("");
             }}
             style={{
               background: P.tBg,
@@ -1441,215 +1517,307 @@ export default function App() {
 
         {tab === "reports" && (
           <div style={{ animation: "fadeIn .3s ease" }}>
-            <h2
-              style={{
-                fontFamily: Ft.h,
-                fontSize: 20,
-                fontWeight: 700,
-                margin: "0 0 16px"
-              }}
-            >
-              Reports
-            </h2>
-            <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-              {isA && (
-                <select
-                  value={reportUser}
-                  onChange={e => setReportUser(e.target.value)}
-                  style={{ ...iS, width: "auto", flex: 1 }}
-                >
-                  <option value="all">All Employees</option>
-                  {users
-                    .filter(u => u.active)
-                    .map(u => (
-                      <option key={u.id} value={u.id}>
-                        {u.name}
-                      </option>
-                    ))}
-                </select>
-              )}
-              <select
-                value={reportPeriod}
-                onChange={e => setReportPeriod(e.target.value)}
-                style={{ ...iS, width: "auto", flex: 1 }}
-              >
-                <option value="current">Current Pay Period</option>
-                <option value="ytd">Year to Date</option>
-                <option value="all">All Time</option>
-              </select>
-            </div>
-            <div
-              style={{
-                background: "#fff",
-                borderRadius: 12,
-                padding: 16,
-                border: `1px solid ${P.bdr}`,
-                borderLeft: `3px solid ${P.red}`,
-                marginBottom: 16
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <div>
-                  <div
-                    style={{
-                      fontSize: 10,
-                      fontFamily: Ft.m,
-                      color: P.lt,
-                      textTransform: "uppercase"
-                    }}
-                  >
-                    Total Miles
-                  </div>
-                  <div style={{ fontSize: 28, fontWeight: 700, fontFamily: Ft.h }}>
-                    {reportMiles.toFixed(1)}
-                  </div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div
-                    style={{
-                      fontSize: 10,
-                      fontFamily: Ft.m,
-                      color: P.lt,
-                      textTransform: "uppercase"
-                    }}
-                  >
-                    Reimbursement
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 28,
-                      fontWeight: 700,
-                      fontFamily: Ft.h,
-                      color: P.grn
-                    }}
-                  >
-                    ${reportReimb.toFixed(2)}
-                  </div>
-                </div>
-              </div>
-              <div style={{ fontSize: 11, color: P.lt, fontFamily: Ft.m, marginTop: 8 }}>
-                {reportTrips.length} trips
-              </div>
-            </div>
-            <Btn
-              small
-              onClick={exportCSV}
-              color={P.blk}
-              sx={{ marginBottom: 16 }}
-            >
-              📥 Export CSV
-            </Btn>
-            {reportTrips.slice(0, 100).map(t => (
-              <div
-                key={t.id}
-                style={{
-                  padding: "12px 14px",
-                  background: "#fff",
-                  borderRadius: 12,
-                  border: `1px solid ${P.bdr}`,
-                  marginBottom: 8
-                }}
-              >
-                <div
+            {isA && !rptAuth ? (
+              <div style={{ maxWidth: 340, margin: "40px auto", textAlign: "center" }}>
+                <h2
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start"
+                    fontFamily: Ft.h,
+                    fontSize: 20,
+                    fontWeight: 700,
+                    marginBottom: 20
                   }}
                 >
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: P.red }}>
-                      {t.user_name}
-                    </div>
-                    <div style={{ fontSize: 14, fontWeight: 600 }}>
-                      {t.from_project_name} → {t.to_project_name}
-                    </div>
-                    <div
-                      style={{ fontSize: 11, color: P.lt, fontFamily: Ft.m, marginTop: 2 }}
-                    >
-                      {fmtDateFull(t.trip_date)}
-                    </div>
-                  </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 16, fontWeight: 700, fontFamily: Ft.h }}>
-                      {Number(t.miles).toFixed(1)} mi
-                    </div>
-                    <div style={{ fontSize: 12, color: P.grn, fontFamily: Ft.m }}>
-                      ${Number(t.reimbursement).toFixed(2)}
-                    </div>
-                    <span
-                      style={{
-                        fontSize: 10,
-                        fontFamily: Ft.m,
-                        padding: "2px 6px",
-                        borderRadius: 4,
-                        background:
-                          t.status === "approved"
-                            ? P.gBg
-                            : t.status === "rejected"
-                            ? P.rBg
-                            : P.aBg,
-                        color:
-                          t.status === "approved"
-                            ? P.grn
-                            : t.status === "rejected"
-                            ? P.red
-                            : P.amb
-                      }}
-                    >
-                      {t.status}
-                    </span>
-                  </div>
-                </div>
-                {isA && t.status === "logged" && (
-                  <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                    <Btn
-                      small
-                      color={P.grn}
-                      onClick={() => approveTrip(t.id)}
-                      sx={{ flex: 1 }}
-                    >
-                      ✓ Approve
-                    </Btn>
-                    <Btn
-                      small
-                      color={P.red}
-                      onClick={() => rejectTrip(t.id)}
-                      sx={{ flex: 1 }}
-                    >
-                      ✕ Reject
-                    </Btn>
-                  </div>
-                )}
-                {isA && (
-                  <button
-                    onClick={() => deleteTrip(t.id)}
+                  Reports Access
+                </h2>
+                <Fl label="Name">
+                  <input
+                    style={iS}
+                    value={raName}
+                    onChange={e => setRAN(e.target.value)}
+                  />
+                </Fl>
+                <Fl label="PIN">
+                  <input
                     style={{
-                      fontSize: 11,
-                      color: P.lt,
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      marginTop: 6,
+                      ...iS,
+                      textAlign: "center",
+                      fontSize: 24,
+                      letterSpacing: 12,
+                      fontFamily: Ft.m
+                    }}
+                    maxLength={4}
+                    value={raPin}
+                    onChange={e => setRAP(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    placeholder="----"
+                    onKeyDown={e => {
+                      if (e.key === "Enter") {
+                        if (
+                          raName.toLowerCase() === user.name.toLowerCase() &&
+                          raPin === user.pin
+                        )
+                          setRptAuth(true);
+                        else setRAE("Invalid.");
+                      }
+                    }}
+                  />
+                </Fl>
+                {raErr && (
+                  <div
+                    style={{
+                      color: P.red,
+                      fontSize: 13,
+                      marginBottom: 12,
                       fontFamily: Ft.m
                     }}
                   >
-                    Delete trip
-                  </button>
+                    {raErr}
+                  </div>
                 )}
+                <Btn
+                  full
+                  onClick={() => {
+                    if (
+                      raName.toLowerCase() === user.name.toLowerCase() &&
+                      raPin === user.pin
+                    )
+                      setRptAuth(true);
+                    else setRAE("Invalid.");
+                  }}
+                >
+                  Unlock Reports
+                </Btn>
               </div>
-            ))}
-            {reportTrips.length === 0 && (
-              <div
-                style={{
-                  padding: 40,
-                  textAlign: "center",
-                  color: P.lt,
-                  fontFamily: Ft.m
-                }}
-              >
-                No trips in this period
-              </div>
+            ) : (
+              <>
+                <h2
+                  style={{
+                    fontFamily: Ft.h,
+                    fontSize: 20,
+                    fontWeight: 700,
+                    margin: "0 0 16px"
+                  }}
+                >
+                  Reports
+                </h2>
+                <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+                  {isA && (
+                    <select
+                      value={reportUser}
+                      onChange={e => setReportUser(e.target.value)}
+                      style={{ ...iS, width: "auto", flex: 1 }}
+                    >
+                      <option value="all">All Employees</option>
+                      {users
+                        .filter(u => u.active)
+                        .map(u => (
+                          <option key={u.id} value={u.id}>
+                            {u.name}
+                          </option>
+                        ))}
+                    </select>
+                  )}
+                  <select
+                    value={reportPeriod}
+                    onChange={e => setReportPeriod(e.target.value)}
+                    style={{ ...iS, width: "auto", flex: 1 }}
+                  >
+                    <option value="current">Current Pay Period</option>
+                    <option value="ytd">Year to Date</option>
+                    <option value="all">All Time</option>
+                  </select>
+                </div>
+                <div
+                  style={{
+                    background: "#fff",
+                    borderRadius: 12,
+                    padding: 16,
+                    border: `1px solid ${P.bdr}`,
+                    borderLeft: `3px solid ${P.red}`,
+                    marginBottom: 16
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 10,
+                          fontFamily: Ft.m,
+                          color: P.lt,
+                          textTransform: "uppercase"
+                        }}
+                      >
+                        Total Miles
+                      </div>
+                      <div style={{ fontSize: 28, fontWeight: 700, fontFamily: Ft.h }}>
+                        {reportMiles.toFixed(1)}
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div
+                        style={{
+                          fontSize: 10,
+                          fontFamily: Ft.m,
+                          color: P.lt,
+                          textTransform: "uppercase"
+                        }}
+                      >
+                        Reimbursement
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 28,
+                          fontWeight: 700,
+                          fontFamily: Ft.h,
+                          color: P.grn
+                        }}
+                      >
+                        ${reportReimb.toFixed(2)}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: P.lt, fontFamily: Ft.m, marginTop: 8 }}>
+                    {reportTrips.length} trips
+                  </div>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 16, flexWrap: "wrap" }} className="no-print">
+                  <Btn
+                    small
+                    onClick={exportCSV}
+                    color={P.blk}
+                  >
+                    📥 Export CSV
+                  </Btn>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Btn
+                      small
+                      onClick={() => setEmailMod(true)}
+                      color={P.blue}
+                    >
+                      ✉️ Email Report
+                    </Btn>
+                    <Btn
+                      small
+                      onClick={printReport}
+                      color={P.tan}
+                    >
+                      🖨️ Print
+                    </Btn>
+                  </div>
+                </div>
+                {reportTrips.slice(0, 100).map(t => (
+                  <div
+                    key={t.id}
+                    style={{
+                      padding: "12px 14px",
+                      background: "#fff",
+                      borderRadius: 12,
+                      border: `1px solid ${P.bdr}`,
+                      marginBottom: 8
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start"
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: P.red }}>
+                          {t.user_name}
+                        </div>
+                        <div style={{ fontSize: 14, fontWeight: 600 }}>
+                          {t.from_project_name} → {t.to_project_name}
+                        </div>
+                        <div
+                          style={{ fontSize: 11, color: P.lt, fontFamily: Ft.m, marginTop: 2 }}
+                        >
+                          {fmtDateFull(t.trip_date)}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 16, fontWeight: 700, fontFamily: Ft.h }}>
+                          {Number(t.miles).toFixed(1)} mi
+                        </div>
+                        <div style={{ fontSize: 12, color: P.grn, fontFamily: Ft.m }}>
+                          ${Number(t.reimbursement).toFixed(2)}
+                        </div>
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontFamily: Ft.m,
+                            padding: "2px 6px",
+                            borderRadius: 4,
+                            background:
+                              t.status === "approved"
+                                ? P.gBg
+                                : t.status === "rejected"
+                                ? P.rBg
+                                : P.aBg,
+                            color:
+                              t.status === "approved"
+                                ? P.grn
+                                : t.status === "rejected"
+                                ? P.red
+                                : P.amb
+                          }}
+                        >
+                          {t.status}
+                        </span>
+                      </div>
+                    </div>
+                    {isA && t.status === "logged" && (
+                      <div style={{ display: "flex", gap: 8, marginTop: 10 }} className="no-print">
+                        <Btn
+                          small
+                          color={P.grn}
+                          onClick={() => approveTrip(t.id)}
+                          sx={{ flex: 1 }}
+                        >
+                          ✓ Approve
+                        </Btn>
+                        <Btn
+                          small
+                          color={P.red}
+                          onClick={() => rejectTrip(t.id)}
+                          sx={{ flex: 1 }}
+                        >
+                          ✕ Reject
+                        </Btn>
+                      </div>
+                    )}
+                    {isA && (
+                      <button
+                        onClick={() => deleteTrip(t.id)}
+                        style={{
+                          fontSize: 11,
+                          color: P.lt,
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          marginTop: 6,
+                          fontFamily: Ft.m
+                        }}
+                        className="no-print"
+                      >
+                        Delete trip
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {reportTrips.length === 0 && (
+                  <div
+                    style={{
+                      padding: 40,
+                      textAlign: "center",
+                      color: P.lt,
+                      fontFamily: Ft.m
+                    }}
+                  >
+                    No trips in this period
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -2139,6 +2307,28 @@ export default function App() {
         </div>
       </Modal>
 
+      <Modal
+        open={emailMod}
+        onClose={() => setEmailMod(false)}
+        title="Email Report"
+      >
+        <Fl label="Recipient Email">
+          <input
+            style={iS}
+            type="email"
+            value={emailTo}
+            onChange={e => setEmailTo(e.target.value)}
+            placeholder="recipient@email.com"
+          />
+        </Fl>
+        <div style={{ fontSize: 12, color: P.lt, marginBottom: 16, fontFamily: Ft.m }}>
+          Opens your default email client with report attached as CSV data.
+        </div>
+        <Btn full disabled={!emailTo.trim()} onClick={emailReport}>
+          Send Email
+        </Btn>
+      </Modal>
+
       <Nav
         tab={tab}
         set={t => {
@@ -2148,6 +2338,11 @@ export default function App() {
             setAdAuth(false);
             setAAN("");
             setAAP("");
+          }
+          if (t !== "reports") {
+            setRptAuth(false);
+            setRAN("");
+            setRAP("");
           }
         }}
         admin={isA}
