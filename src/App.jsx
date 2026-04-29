@@ -81,8 +81,8 @@ async function getDrivingMiles(from, to) {
 }
 
 function getPayPeriod(date, anchor, freq = "biweekly", time = "12:00") {
-  const d = new Date(date + "T" + time + ":00-07:00");
-  const a = new Date(anchor + "T" + time + ":00-07:00");
+  const d = new Date(date + "T" + time + ":00");
+  const a = new Date(anchor + "T" + time + ":00");
   
   let days;
   if (freq === "weekly") days = 7;
@@ -98,9 +98,16 @@ function getPayPeriod(date, anchor, freq = "biweekly", time = "12:00") {
     end.setTime(end.getTime() - days * 86400000);
   }
   
+  const fmtD = (dt) => {
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const d = String(dt.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+  
   return {
-    start: start.toISOString().slice(0, 10),
-    end: end.toISOString().slice(0, 10)
+    start: fmtD(start),
+    end: fmtD(end)
   };
 }
 
@@ -829,8 +836,10 @@ export default function App() {
 
   const reportTrips = trips.filter(t => {
     if (reportUser !== "all" && t.user_id !== reportUser) return false;
-    if (reportPeriod === "current")
-      return t.trip_date >= pp.start && t.trip_date <= pp.end;
+    if (reportPeriod === "current") {
+      const td = t.trip_date;
+      return td >= pp.start && td <= pp.end;
+    }
     if (reportPeriod === "ytd") return t.trip_date >= `${thisYear()}-01-01`;
     return true;
   });
@@ -1820,7 +1829,7 @@ export default function App() {
                   <Btn
                     small
                     onClick={exportCSV}
-                    color={P.blk}
+                    color={P.tan}
                   >
                     📥 Export CSV
                   </Btn>
@@ -1828,7 +1837,7 @@ export default function App() {
                     <Btn
                       small
                       onClick={() => setEmailMod(true)}
-                      color={P.tan}
+                      color={P.blk}
                     >
                       ✉️ Email Report
                     </Btn>
