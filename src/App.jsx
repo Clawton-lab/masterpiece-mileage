@@ -457,6 +457,8 @@ export default function App() {
   const [raErr, setRAE] = useState("");
   const [emailMod, setEmailMod] = useState(false);
   const [emailTo, setEmailTo] = useState("");
+  const [manualMod, setManualMod] = useState(false);
+  const [manualMiles, setManualMiles] = useState("");
 
   const show = useCallback(m => {
     setToast({ m, s: true });
@@ -565,10 +567,10 @@ export default function App() {
     }
     setCalc(true);
     try {
-      const miles = await getDrivingMiles(fromP.address, toP.address);
+      let miles = await getDrivingMiles(fromP.address, toP.address);
       if (!miles) {
-        show("Couldn't calculate route. Check addresses.");
         setCalc(false);
+        setManualMod(true);
         return;
       }
       const reimb = Math.round(miles * settings.irs_rate * 100) / 100;
@@ -599,6 +601,46 @@ export default function App() {
       show("Error logging trip");
     }
     setCalc(false);
+  };
+
+  const saveManualTrip = async () => {
+    const miles = parseFloat(manualMiles);
+    if (!miles || miles <= 0) {
+      show("Enter valid miles");
+      return;
+    }
+    const fromP = projs.find(p => p.id === fromId);
+    const toP = projs.find(p => p.id === toId);
+    const reimb = Math.round(miles * settings.irs_rate * 100) / 100;
+    try {
+      await api("trips", {
+        method: "POST",
+        body: JSON.stringify({
+          user_id: user.id,
+          user_name: user.name,
+          from_project_id: fromP.id,
+          from_project_name: fromP.name,
+          from_address: fromP.address,
+          to_project_id: toP.id,
+          to_project_name: toP.name,
+          to_address: toP.address,
+          miles,
+          reimbursement: reimb,
+          irs_rate: settings.irs_rate,
+          note: tripNote,
+          trip_date: today()
+        })
+      });
+      await load();
+      setFromId(toId);
+      setToId("");
+      setTripNote("");
+      setManualMod(false);
+      setManualMiles("");
+      show(`${miles} mi logged — $${reimb.toFixed(2)}`);
+    } catch (e) {
+      show("Error saving trip");
+    }
   };
 
   const saveProj = async () => {
@@ -2237,6 +2279,31 @@ export default function App() {
         </div>
         <Btn full disabled={!nPN.trim() || !nPA.trim()} onClick={saveProj}>
           Add Project
+        </Btn>
+      </Modal>
+
+      <Modal open={manualMod} onClose={() => setManualMod(false)} title="Manual Entry">
+        <div style={{ fontSize: 14, color: P.mid, marginBottom: 16 }}>
+          Auto-calculation failed. Enter mileage manually:
+        </div>
+        <Fl label="Miles">
+          <input
+            style={{...iS, textAlign: "center", fontSize: 20, fontFamily: Ft.h}}
+            type="number"
+            step="0.1"
+            value={manualMiles}
+            onChange={e => setManualMiles(e.target.value)}
+            placeholder="0.0"
+            autoFocus
+          />
+        </Fl>
+        {manualMiles && (
+          <div style={{ fontSize: 13, color: P.grn, marginBottom: 12, textAlign: "center", fontFamily: Ft.m }}>
+            Reimbursement: ${(parseFloat(manualMiles) * settings.irs_rate).toFixed(2)}
+          </div>
+        )}
+        <Btn full disabled={!manualMiles || parseFloat(manualMiles) <= 0} onClick={saveManualTrip}>
+          Log Trip
         </Btn>
       </Modal>
 
