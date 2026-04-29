@@ -131,7 +131,11 @@ function fmtDateFull(d) {
 }
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function thisYear() {
@@ -841,30 +845,34 @@ export default function App() {
   const ppMiles = ppTrips.reduce((s, t) => s + Number(t.miles), 0);
   const ytdMiles = ytdTrips.reduce((s, t) => s + Number(t.miles), 0);
 
+  console.log("=== REPORTS DEBUG ===");
+  console.log("Total trips loaded:", trips.length);
+  console.log("All trip dates:", trips.map(t => ({date: t.trip_date, user: t.user_name})));
+  console.log("Current pay period:", pp);
+  console.log("reportUser:", reportUser);
+  console.log("reportPeriod:", reportPeriod);
+  console.log("Current user:", user?.name, "Role:", user?.role, "ID:", user?.id);
+  
   const reportTrips = trips.filter(t => {
-    console.log("DEBUG FILTER - Trip:", {date: t.trip_date, user: t.user_name, user_id: t.user_id});
-    console.log("DEBUG FILTER - Settings:", {reportUser, reportPeriod, pp});
+    const userMatch = reportUser === "all" || t.user_id === reportUser;
+    let periodMatch = true;
     
-    if (reportUser !== "all" && t.user_id !== reportUser) {
-      console.log("DEBUG FILTER - User filter excluded trip");
-      return false;
-    }
     if (reportPeriod === "current") {
-      const included = t.trip_date >= pp.start && t.trip_date <= pp.end;
-      console.log("DEBUG FILTER - Current period check:", {tripDate: t.trip_date, ppStart: pp.start, ppEnd: pp.end, included});
-      return included;
-    }
-    if (reportPeriod === "monthly") {
+      periodMatch = t.trip_date >= pp.start && t.trip_date <= pp.end;
+    } else if (reportPeriod === "monthly") {
       const now = new Date();
       const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-      return t.trip_date >= monthStart;
+      periodMatch = t.trip_date >= monthStart;
+    } else if (reportPeriod === "ytd") {
+      periodMatch = t.trip_date >= `${thisYear()}-01-01`;
     }
-    if (reportPeriod === "ytd") return t.trip_date >= `${thisYear()}-01-01`;
-    return true;
+    
+    return userMatch && periodMatch;
   });
-  console.log("DEBUG FILTER - Total trips in array:", trips.length);
-  console.log("DEBUG FILTER - Filtered trips:", reportTrips.length);
-  console.log("DEBUG FILTER - Filtered trips details:", reportTrips.map(t => ({date: t.trip_date, user: t.user_name})));
+  
+  console.log("Filtered report trips:", reportTrips.length);
+  console.log("Report trip details:", reportTrips.map(t => ({date: t.trip_date, user: t.user_name, miles: t.miles})));
+  console.log("===================");
   const reportMiles = reportTrips.reduce((s, t) => s + Number(t.miles), 0);
   const reportReimb = reportTrips.reduce(
     (s, t) => s + Number(t.reimbursement),
