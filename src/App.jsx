@@ -18,17 +18,45 @@ async function api(path, opts = {}) {
 
 async function geocode(address) {
   try {
-    await new Promise(r => setTimeout(r, 200));
-    const r = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-        address
-      )}&limit=1`,
+    const parts = address.split(',').map(p => p.trim());
+    let street = parts[0] || '';
+    let city = parts[1] || '';
+    let stateZip = parts[2] || '';
+    let state = stateZip.split(' ')[0] || '';
+    let zip = stateZip.split(' ').slice(1).join(' ') || '';
+    
+    const params = new URLSearchParams({
+      format: 'json',
+      street: street,
+      city: city,
+      state: state,
+      postalcode: zip,
+      country: 'USA',
+      limit: '1'
+    });
+    
+    await new Promise(r => setTimeout(r, 300));
+    let r = await fetch(
+      `https://nominatim.openstreetmap.org/search?${params}`,
       { headers: { "User-Agent": "MasterpieceMileageApp/1.0" } }
     );
-    if (!r.ok) throw new Error(`Geocoding failed: ${r.status}`);
-    const d = await r.json();
-    if (!d || d.length === 0) throw new Error("Address not found");
-    return { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) };
+    
+    let d = await r.json();
+    if (r.ok && d && d.length > 0) {
+      return { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) };
+    }
+    
+    await new Promise(r2 => setTimeout(r2, 300));
+    const fallback = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`,
+      { headers: { "User-Agent": "MasterpieceMileageApp/1.0" } }
+    );
+    const d2 = await fallback.json();
+    if (d2 && d2.length > 0) {
+      return { lat: parseFloat(d2[0].lat), lng: parseFloat(d2[0].lon) };
+    }
+    
+    throw new Error("Address not found");
   } catch (e) {
     console.error("Geocode error:", e);
     return null;
@@ -39,10 +67,10 @@ async function getDrivingMiles(from, to) {
   try {
     const a = await geocode(from);
     if (!a) throw new Error(`Could not geocode: ${from}`);
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise(r => setTimeout(r, 300));
     const b = await geocode(to);
     if (!b) throw new Error(`Could not geocode: ${to}`);
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise(r => setTimeout(r, 300));
     const r = await fetch(
       `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=false`
     );
@@ -366,6 +394,7 @@ function Nav({ tab, set, admin }) {
   const ts = [
     { k: "log", l: "Log Trip" },
     { k: "trips", l: "My Trips" },
+    { k: "projects", l: "Projects" },
     { k: "reports", l: "Reports" }
   ];
   if (admin) ts.push({ k: "admin", l: "Admin" });
@@ -394,19 +423,20 @@ function Nav({ tab, set, admin }) {
             flexDirection: "column",
             alignItems: "center",
             gap: 2,
-            padding: "4px 12px",
+            padding: "4px 8px",
             background: "none",
             border: "none",
             cursor: "pointer",
             color: tab === t.k ? P.red : P.lt,
             borderTop:
               tab === t.k ? `2px solid ${P.red}` : "2px solid transparent",
-            marginTop: -2
+            marginTop: -2,
+            fontSize: 11,
+            fontWeight: 700,
+            fontFamily: Ft.m
           }}
         >
-          <span style={{ fontSize: 11, fontWeight: 700, fontFamily: Ft.m }}>
-            {t.l}
-          </span>
+          {t.l}
         </button>
       ))}
     </nav>
@@ -1323,16 +1353,6 @@ export default function App() {
                 {fmtDate(pp.start)} – {fmtDate(pp.end)}
               </div>
             </div>
-            {isA && (
-              <Btn
-                small
-                onClick={() => setProjMod(true)}
-                color={P.blk}
-                sx={{ marginBottom: 16 }}
-              >
-                + Add Project
-              </Btn>
-            )}
             {todayTrips.length > 0 && (
               <>
                 <h3
@@ -1552,6 +1572,70 @@ export default function App() {
                 }}
               >
                 No trips logged yet
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab === "projects" && (
+          <div style={{ animation: "fadeIn .3s ease" }}>
+            <h2
+              style={{
+                fontFamily: Ft.h,
+                fontSize: 20,
+                fontWeight: 700,
+                margin: "0 0 16px"
+              }}
+            >
+              Projects
+            </h2>
+            {isA && (
+              <Btn
+                small
+                onClick={() => setProjMod(true)}
+                color={P.red}
+                sx={{ marginBottom: 16 }}
+              >
+                + Add Project
+              </Btn>
+            )}
+            {projs.map(p => (
+              <div
+                key={p.id}
+                style={{
+                  padding: "12px 16px",
+                  background: "#fff",
+                  borderRadius: 12,
+                  border: `1px solid ${P.bdr}`,
+                  marginBottom: 8,
+                  borderLeft: `3px solid ${p.address ? P.grn : P.lt}`
+                }}
+              >
+                <div style={{ fontWeight: 600, fontSize: 15 }}>
+                  {p.name}
+                </div>
+                {p.address && (
+                  <div style={{ fontSize: 12, color: P.mid, marginTop: 4 }}>
+                    {p.address}
+                  </div>
+                )}
+                {!p.address && (
+                  <div style={{ fontSize: 12, color: P.lt, marginTop: 4, fontStyle: "italic" }}>
+                    No address - cannot calculate mileage
+                  </div>
+                )}
+              </div>
+            ))}
+            {projs.length === 0 && (
+              <div
+                style={{
+                  padding: 40,
+                  textAlign: "center",
+                  color: P.lt,
+                  fontFamily: Ft.m
+                }}
+              >
+                No projects yet. Add one to start logging trips.
               </div>
             )}
           </div>
