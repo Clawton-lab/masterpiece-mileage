@@ -497,7 +497,7 @@ export default function App() {
     try {
       const [p, t, s, u] = await Promise.all([
         api("projects?order=name"),
-        api("trips?order=created_at.desc&limit=500"),
+        api("trips?order=created_at.desc"),
         api("mileage_settings?limit=1"),
         api("yard_users?order=name")
       ]);
@@ -813,8 +813,11 @@ export default function App() {
 
   const reportTrips = trips.filter(t => {
     if (reportUser !== "all" && t.user_id !== reportUser) return false;
-    if (reportPeriod === "current")
-      return t.trip_date >= pp.start && t.trip_date <= pp.end;
+    if (reportPeriod === "current") {
+      const inPeriod = t.trip_date >= pp.start && t.trip_date <= pp.end;
+      console.log(`Trip ${t.id}: ${t.trip_date}, Pay Period: ${pp.start} to ${pp.end}, In Period: ${inPeriod}`);
+      return inPeriod;
+    }
     if (reportPeriod === "ytd") return t.trip_date >= `${thisYear()}-01-01`;
     return true;
   });
@@ -1812,14 +1815,14 @@ export default function App() {
                     <Btn
                       small
                       onClick={() => setEmailMod(true)}
-                      color={P.blue}
+                      color={P.red}
                     >
                       ✉️ Email Report
                     </Btn>
                     <Btn
                       small
                       onClick={printReport}
-                      color={P.tan}
+                      color={P.red}
                     >
                       🖨️ Print
                     </Btn>
