@@ -477,6 +477,7 @@ export default function App() {
   const [fromId, setFromId] = useState("");
   const [toId, setToId] = useState("");
   const [tripNote, setTripNote] = useState("");
+  const [tripDate, setTripDate] = useState(today());
   const [calculating, setCalc] = useState(false);
   const [projMod, setProjMod] = useState(false);
   const [nPN, setNPN] = useState("");
@@ -639,13 +640,14 @@ export default function App() {
           reimbursement: reimb,
           irs_rate: settings.irs_rate,
           note: tripNote,
-          trip_date: today()
+          trip_date: tripDate
         })
       });
       await load();
       setFromId(toId);
       setToId("");
       setTripNote("");
+      setTripDate(today());
       show(`${miles} mi logged — $${reimb.toFixed(2)}`);
     } catch (e) {
       show("Error logging trip");
@@ -678,13 +680,14 @@ export default function App() {
           reimbursement: reimb,
           irs_rate: settings.irs_rate,
           note: tripNote,
-          trip_date: today()
+          trip_date: tripDate
         })
       });
       await load();
       setFromId(toId);
       setToId("");
       setTripNote("");
+      setTripDate(today());
       setManualMod(false);
       setManualMiles("");
       show(`${miles} mi logged — $${reimb.toFixed(2)}`);
@@ -839,9 +842,17 @@ export default function App() {
   const ytdMiles = ytdTrips.reduce((s, t) => s + Number(t.miles), 0);
 
   const reportTrips = trips.filter(t => {
-    if (reportUser !== "all" && t.user_id !== reportUser) return false;
+    console.log("DEBUG FILTER - Trip:", {date: t.trip_date, user: t.user_name, user_id: t.user_id});
+    console.log("DEBUG FILTER - Settings:", {reportUser, reportPeriod, pp});
+    
+    if (reportUser !== "all" && t.user_id !== reportUser) {
+      console.log("DEBUG FILTER - User filter excluded trip");
+      return false;
+    }
     if (reportPeriod === "current") {
-      return t.trip_date >= pp.start && t.trip_date <= pp.end;
+      const included = t.trip_date >= pp.start && t.trip_date <= pp.end;
+      console.log("DEBUG FILTER - Current period check:", {tripDate: t.trip_date, ppStart: pp.start, ppEnd: pp.end, included});
+      return included;
     }
     if (reportPeriod === "monthly") {
       const now = new Date();
@@ -851,6 +862,9 @@ export default function App() {
     if (reportPeriod === "ytd") return t.trip_date >= `${thisYear()}-01-01`;
     return true;
   });
+  console.log("DEBUG FILTER - Total trips in array:", trips.length);
+  console.log("DEBUG FILTER - Filtered trips:", reportTrips.length);
+  console.log("DEBUG FILTER - Filtered trips details:", reportTrips.map(t => ({date: t.trip_date, user: t.user_name})));
   const reportMiles = reportTrips.reduce((s, t) => s + Number(t.miles), 0);
   const reportReimb = reportTrips.reduce(
     (s, t) => s + Number(t.reimbursement),
@@ -1355,6 +1369,16 @@ export default function App() {
                     ))}
                 </select>
               </Fl>
+              {(user?.role === "admin" || user?.role === "senior_admin" || user?.role === "super_admin") && (
+                <Fl label="Trip Date (Admin Only)">
+                  <input
+                    type="date"
+                    style={iS}
+                    value={tripDate}
+                    onChange={e => setTripDate(e.target.value)}
+                  />
+                </Fl>
+              )}
               <Fl label="Note (optional)">
                 <input
                   style={iS}
