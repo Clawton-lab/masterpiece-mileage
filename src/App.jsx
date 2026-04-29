@@ -81,33 +81,37 @@ async function getDrivingMiles(from, to) {
 }
 
 function getPayPeriod(date, anchor, freq = "biweekly", time = "12:00") {
-  const d = new Date(date + "T" + time + ":00");
-  const a = new Date(anchor + "T" + time + ":00");
+  const [hours, minutes] = time.split(':').map(Number);
   
-  let days;
-  if (freq === "weekly") days = 7;
-  else if (freq === "monthly") days = 30;
-  else days = 14;
+  const now = new Date();
+  const currentDateTime = new Date(date + 'T00:00:00');
+  currentDateTime.setHours(now.getHours(), now.getMinutes(), 0, 0);
   
-  const diff = Math.floor((d - a) / (days * 86400000));
-  const start = new Date(a.getTime() + diff * days * 86400000);
-  const end = new Date(start.getTime() + (days - 1) * 86400000);
+  const anchorDateTime = new Date(anchor + 'T' + time + ':00');
   
-  if (d < start) {
-    start.setTime(start.getTime() - days * 86400000);
-    end.setTime(end.getTime() - days * 86400000);
-  }
+  let periodDays;
+  if (freq === "weekly") periodDays = 7;
+  else if (freq === "monthly") periodDays = 30;
+  else periodDays = 14;
   
-  const fmtD = (dt) => {
-    const y = dt.getFullYear();
-    const m = String(dt.getMonth() + 1).padStart(2, '0');
-    const d = String(dt.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+  const msPerPeriod = periodDays * 24 * 60 * 60 * 1000;
+  const timeDiff = currentDateTime.getTime() - anchorDateTime.getTime();
+  const periodsSinceAnchor = Math.floor(timeDiff / msPerPeriod);
+  
+  const periodStartTime = new Date(anchorDateTime.getTime() + (periodsSinceAnchor * msPerPeriod));
+  const periodEndTime = new Date(periodStartTime.getTime() + msPerPeriod);
+  periodEndTime.setDate(periodEndTime.getDate() - 1);
+  
+  const formatDate = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   };
   
   return {
-    start: fmtD(start),
-    end: fmtD(end)
+    start: formatDate(periodStartTime),
+    end: formatDate(periodEndTime)
   };
 }
 
@@ -825,8 +829,6 @@ export default function App() {
 
   const myTrips = trips.filter(t => t.user_id === user?.id);
   const pp = getPayPeriod(today(), settings.pay_period_anchor, settings.pay_period_frequency, settings.pay_period_time);
-  console.log('DEBUG getPayPeriod result:', pp);
-  console.log('DEBUG Settings:', {anchor: settings.pay_period_anchor, freq: settings.pay_period_frequency, time: settings.pay_period_time});
   const todayTrips = myTrips.filter(t => t.trip_date === today());
   const ppTrips = myTrips.filter(
     t => t.trip_date >= pp.start && t.trip_date <= pp.end
@@ -839,9 +841,6 @@ export default function App() {
   const reportTrips = trips.filter(t => {
     if (reportUser !== "all" && t.user_id !== reportUser) return false;
     if (reportPeriod === "current") {
-      console.log('DEBUG Pay Period:', pp.start, 'to', pp.end);
-      console.log('DEBUG Trip Date:', t.trip_date, 'User:', t.user_name);
-      console.log('DEBUG Comparison:', t.trip_date >= pp.start, '&&', t.trip_date <= pp.end);
       return t.trip_date >= pp.start && t.trip_date <= pp.end;
     }
     if (reportPeriod === "monthly") {
