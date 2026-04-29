@@ -825,6 +825,8 @@ export default function App() {
 
   const myTrips = trips.filter(t => t.user_id === user?.id);
   const pp = getPayPeriod(today(), settings.pay_period_anchor, settings.pay_period_frequency, settings.pay_period_time);
+  console.log('DEBUG getPayPeriod result:', pp);
+  console.log('DEBUG Settings:', {anchor: settings.pay_period_anchor, freq: settings.pay_period_frequency, time: settings.pay_period_time});
   const todayTrips = myTrips.filter(t => t.trip_date === today());
   const ppTrips = myTrips.filter(
     t => t.trip_date >= pp.start && t.trip_date <= pp.end
@@ -837,8 +839,15 @@ export default function App() {
   const reportTrips = trips.filter(t => {
     if (reportUser !== "all" && t.user_id !== reportUser) return false;
     if (reportPeriod === "current") {
-      const td = t.trip_date;
-      return td >= pp.start && td <= pp.end;
+      console.log('DEBUG Pay Period:', pp.start, 'to', pp.end);
+      console.log('DEBUG Trip Date:', t.trip_date, 'User:', t.user_name);
+      console.log('DEBUG Comparison:', t.trip_date >= pp.start, '&&', t.trip_date <= pp.end);
+      return t.trip_date >= pp.start && t.trip_date <= pp.end;
+    }
+    if (reportPeriod === "monthly") {
+      const now = new Date();
+      const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      return t.trip_date >= monthStart;
     }
     if (reportPeriod === "ytd") return t.trip_date >= `${thisYear()}-01-01`;
     return true;
@@ -921,8 +930,10 @@ export default function App() {
     const csv = rows.map(r => r.join(",")).join("\n");
     
     try {
-      const subject = `Mileage Report - ${reportPeriod === 'current' ? 'Current Pay Period' : reportPeriod === 'ytd' ? 'Year to Date' : 'All Time'}`;
-      const body = `Mileage Report\n\nPeriod: ${reportPeriod === 'current' ? `${fmtDate(pp.start)} - ${fmtDate(pp.end)}` : reportPeriod === 'ytd' ? `${thisYear()} YTD` : 'All Time'}\n${reportUser !== 'all' ? `Employee: ${users.find(u => u.id === reportUser)?.name}\n` : ''}Total Miles: ${reportMiles.toFixed(1)}\nTotal Reimbursement: $${reportReimb.toFixed(2)}\nTrips: ${reportTrips.length}\n\nCSV Report attached below:\n\n${csv}`;
+      const periodLabel = reportPeriod === 'current' ? 'Current Pay Period' : reportPeriod === 'monthly' ? 'Monthly Mileage' : reportPeriod === 'ytd' ? 'Year to Date' : 'All Time';
+      const periodDates = reportPeriod === 'current' ? `${fmtDate(pp.start)} - ${fmtDate(pp.end)}` : reportPeriod === 'monthly' ? new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : reportPeriod === 'ytd' ? `${thisYear()} YTD` : 'All Time';
+      const subject = `Mileage Report - ${periodLabel}`;
+      const body = `Mileage Report\n\nPeriod: ${periodDates}\n${reportUser !== 'all' ? `Employee: ${users.find(u => u.id === reportUser)?.name}\n` : ''}Total Miles: ${reportMiles.toFixed(1)}\nTotal Reimbursement: $${reportReimb.toFixed(2)}\nTrips: ${reportTrips.length}\n\nCSV Report attached below:\n\n${csv}`;
       
       const mailto = `mailto:${emailTo.trim()}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
       window.location.href = mailto;
@@ -1768,6 +1779,7 @@ export default function App() {
                     style={{ ...iS, width: "auto", flex: 1 }}
                   >
                     <option value="current">Current Pay Period</option>
+                    <option value="monthly">Monthly Mileage</option>
                     <option value="ytd">Year to Date</option>
                     <option value="all">All Time</option>
                   </select>
