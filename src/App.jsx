@@ -2000,6 +2000,7 @@ export default function App() {
                     </Btn>
                   </div>
                 </div>
+                <div style={{ borderTop: `2px solid ${P.red}`, margin: "16px 0" }} />
                 {reportTrips.slice(0, 100).flatMap((t, i, arr) => {
                   const sep = i > 0 && t.user_name !== arr[i - 1].user_name;
                   const card = (
