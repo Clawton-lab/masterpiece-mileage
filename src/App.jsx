@@ -830,11 +830,17 @@ export default function App() {
       return;
     }
     const url = window.location.origin;
-    const body = `Masterpiece Mileage Tracker — log your trips here: ${url}`;
-    window.location.href = `sms:${phones.join(",")}?&body=${encodeURIComponent(body)}`;
-    setShareMod(false);
-    setSharePhones("");
-    show("Opening messages...");
+    const body = `Masterpiece Mileage Tracker - log your trips here: ${url}`;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const sep = isIOS ? "&" : "?";
+    try {
+      window.location.href = `sms:${phones.join(",")}${sep}body=${encodeURIComponent(body)}`;
+      setShareMod(false);
+      setSharePhones("");
+      show("Opening messages...");
+    } catch (e) {
+      show("Could not open messages app");
+    }
   };
 
   const togUser = async (id, a) => {
