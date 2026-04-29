@@ -81,8 +81,8 @@ async function getDrivingMiles(from, to) {
 }
 
 function getPayPeriod(date, anchor, freq = "biweekly", time = "12:00") {
-  const d = new Date(date + "T" + time + ":00");
-  const a = new Date(anchor + "T" + time + ":00");
+  const d = new Date(date + "T" + time + ":00-07:00");
+  const a = new Date(anchor + "T" + time + ":00-07:00");
   
   let days;
   if (freq === "weekly") days = 7;
@@ -1828,7 +1828,7 @@ export default function App() {
                     <Btn
                       small
                       onClick={() => setEmailMod(true)}
-                      color={P.red}
+                      color={P.tan}
                     >
                       ✉️ Email Report
                     </Btn>
