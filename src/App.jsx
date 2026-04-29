@@ -913,6 +913,10 @@ export default function App() {
     }
     
     return userMatch && periodMatch;
+  }).sort((a, b) => {
+    if (a.user_id === user?.id && b.user_id !== user?.id) return -1;
+    if (b.user_id === user?.id && a.user_id !== user?.id) return 1;
+    return (a.user_name || "").localeCompare(b.user_name || "");
   });
   
   console.log("Filtered report trips:", reportTrips.length);
@@ -1554,7 +1558,7 @@ export default function App() {
                     ? [
                         <div
                           key={`sep-${t.id}`}
-                          style={{ borderTop: "2px solid #ddd", margin: "16px 0" }}
+                          style={{ borderTop: `2px solid ${P.red}`, margin: "16px 0" }}
                         />,
                         card
                       ]
@@ -1721,7 +1725,7 @@ export default function App() {
                 ? [
                     <div
                       key={`sep-${t.id}`}
-                      style={{ borderTop: "2px solid #ddd", margin: "16px 0" }}
+                      style={{ borderTop: `2px solid ${P.red}`, margin: "16px 0" }}
                     />,
                     card
                   ]
@@ -1997,7 +2001,7 @@ export default function App() {
                   </div>
                 </div>
                 {reportTrips.slice(0, 100).flatMap((t, i, arr) => {
-                  const sep = i > 0 && t.trip_date !== arr[i - 1].trip_date;
+                  const sep = i > 0 && t.user_name !== arr[i - 1].user_name;
                   const card = (
                     <div
                       key={t.id}
@@ -2118,7 +2122,7 @@ export default function App() {
                     ? [
                         <div
                           key={`sep-${t.id}`}
-                          style={{ borderTop: "2px solid #ddd", margin: "16px 0" }}
+                          style={{ borderTop: `2px solid ${P.red}`, margin: "16px 0" }}
                         />,
                         card
                       ]
