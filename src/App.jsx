@@ -17,50 +17,45 @@ async function api(path, opts = {}) {
 }
 
 async function geocode(address) {
+  console.log("Geocoding address:", address);
+  
   try {
-    const parts = address.split(',').map(p => p.trim());
-    let street = parts[0] || '';
-    let city = parts[1] || '';
-    let stateZip = parts[2] || '';
-    let state = stateZip.split(' ')[0] || '';
-    let zip = stateZip.split(' ').slice(1).join(' ') || '';
-    
-    const params = new URLSearchParams({
-      format: 'json',
-      street: street,
-      city: city,
-      state: state,
-      postalcode: zip,
-      country: 'USA',
-      limit: '1'
-    });
-    
     await new Promise(r => setTimeout(r, 300));
-    let r = await fetch(
-      `https://nominatim.openstreetmap.org/search?${params}`,
-      { headers: { "User-Agent": "MasterpieceMileageApp/1.0" } }
-    );
+    const photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(address)}&limit=1`;
+    console.log("Trying Photon API:", photonUrl);
+    const photonRes = await fetch(photonUrl);
+    const photonData = await photonRes.json();
     
-    let d = await r.json();
-    if (r.ok && d && d.length > 0) {
-      return { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) };
+    if (photonData.features && photonData.features.length > 0) {
+      const coords = photonData.features[0].geometry.coordinates;
+      console.log("Photon success:", coords);
+      return { lat: coords[1], lng: coords[0] };
     }
-    
-    await new Promise(r2 => setTimeout(r2, 300));
-    const fallback = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`,
-      { headers: { "User-Agent": "MasterpieceMileageApp/1.0" } }
-    );
-    const d2 = await fallback.json();
-    if (d2 && d2.length > 0) {
-      return { lat: parseFloat(d2[0].lat), lng: parseFloat(d2[0].lon) };
-    }
-    
-    throw new Error("Address not found");
+    console.log("Photon failed, trying Nominatim...");
   } catch (e) {
-    console.error("Geocode error:", e);
-    return null;
+    console.error("Photon error:", e);
   }
+  
+  try {
+    await new Promise(r => setTimeout(r, 500));
+    const nomUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1&countrycodes=us`;
+    console.log("Trying Nominatim:", nomUrl);
+    const nomRes = await fetch(nomUrl, {
+      headers: { "User-Agent": "MasterpieceMileageApp/1.0" }
+    });
+    const nomData = await nomRes.json();
+    
+    if (nomData && nomData.length > 0) {
+      console.log("Nominatim success:", nomData[0]);
+      return { lat: parseFloat(nomData[0].lat), lng: parseFloat(nomData[0].lon) };
+    }
+    console.log("Nominatim failed");
+  } catch (e) {
+    console.error("Nominatim error:", e);
+  }
+  
+  console.error("All geocoding services failed for:", address);
+  return null;
 }
 
 async function getDrivingMiles(from, to) {
