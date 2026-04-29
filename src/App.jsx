@@ -489,6 +489,7 @@ export default function App() {
   const [reportUser, setReportUser] = useState("all");
   const [reportPeriod, setReportPeriod] = useState("current");
   const [reportMonth, setReportMonth] = useState(today().slice(0, 7));
+  const [showRejected, setShowRejected] = useState(false);
   const [settingsRate, setSettingsRate] = useState("");
   const [settingsAnchor, setSettingsAnchor] = useState("");
   const [settingsFreq, setSettingsFreq] = useState("biweekly");
@@ -925,9 +926,9 @@ export default function App() {
     t => t.trip_date >= pp.start && t.trip_date <= pp.end
   );
   const ytdTrips = myTrips.filter(t => t.trip_date >= `${thisYear()}-01-01`);
-  const todayMiles = todayTrips.reduce((s, t) => s + Number(t.miles), 0);
-  const ppMiles = ppTrips.reduce((s, t) => s + Number(t.miles), 0);
-  const ytdMiles = ytdTrips.reduce((s, t) => s + Number(t.miles), 0);
+  const todayMiles = todayTrips.reduce((s, t) => t.status === "rejected" ? s : s + Number(t.miles), 0);
+  const ppMiles = ppTrips.reduce((s, t) => t.status === "rejected" ? s : s + Number(t.miles), 0);
+  const ytdMiles = ytdTrips.reduce((s, t) => t.status === "rejected" ? s : s + Number(t.miles), 0);
 
   console.log("=== REPORTS DEBUG ===");
   console.log("Total trips loaded:", trips.length);
@@ -937,7 +938,7 @@ export default function App() {
   console.log("reportPeriod:", reportPeriod);
   console.log("Current user:", user?.name, "Role:", user?.role, "ID:", user?.id);
   
-  const reportTrips = trips.filter(t => {
+  const allFilteredTrips = trips.filter(t => {
     const userMatch = reportUser === "all" || t.user_id === reportUser;
     let periodMatch = true;
     
@@ -958,6 +959,9 @@ export default function App() {
     if (b.user_id === user?.id && a.user_id !== user?.id) return 1;
     return (a.user_name || "").localeCompare(b.user_name || "");
   });
+  const activeTrips = allFilteredTrips.filter(t => t.status !== "rejected");
+  const rejectedTrips = allFilteredTrips.filter(t => t.status === "rejected");
+  const reportTrips = showRejected ? rejectedTrips : activeTrips;
   
   console.log("Filtered report trips:", reportTrips.length);
   console.log("Report trip details:", reportTrips.map(t => ({date: t.trip_date, user: t.user_name, miles: t.miles})));
@@ -2038,13 +2042,22 @@ export default function App() {
                   </div>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 16, flexWrap: "wrap" }} className="no-print">
-                  <Btn
-                    small
-                    onClick={exportCSV}
-                    color={P.tan}
-                  >
-                    📥 Export CSV
-                  </Btn>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Btn
+                      small
+                      onClick={exportCSV}
+                      color={P.tan}
+                    >
+                      📥 Export CSV
+                    </Btn>
+                    <Btn
+                      small
+                      onClick={() => setShowRejected(r => !r)}
+                      color={showRejected ? P.red : P.blk}
+                    >
+                      {showRejected ? `← Active` : `✕ Rejected (${rejectedTrips.length})`}
+                    </Btn>
+                  </div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <Btn
                       small
