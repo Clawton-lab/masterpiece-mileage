@@ -490,6 +490,7 @@ export default function App() {
   const [reportPeriod, setReportPeriod] = useState("current");
   const [reportMonth, setReportMonth] = useState(today().slice(0, 7));
   const [showRejected, setShowRejected] = useState(false);
+  const [myShowRejected, setMyShowRejected] = useState(false);
   const [settingsRate, setSettingsRate] = useState("");
   const [settingsAnchor, setSettingsAnchor] = useState("");
   const [settingsFreq, setSettingsFreq] = useState("biweekly");
@@ -920,6 +921,8 @@ export default function App() {
   };
 
   const myTrips = trips.filter(t => t.user_id === user?.id);
+  const myActiveTrips = myTrips.filter(t => t.status !== "rejected");
+  const myRejectedTrips = myTrips.filter(t => t.status === "rejected").sort((a, b) => (b.trip_date || "").localeCompare(a.trip_date || ""));
   const pp = getPayPeriod(today(), settings.pay_period_anchor, settings.pay_period_frequency, settings.pay_period_time);
   const todayTrips = myTrips.filter(t => t.trip_date === today());
   const ppTrips = myTrips.filter(
@@ -1615,16 +1618,25 @@ export default function App() {
 
         {tab === "trips" && (
           <div style={{ animation: "fadeIn .3s ease" }}>
-            <h2
-              style={{
-                fontFamily: Ft.h,
-                fontSize: 20,
-                fontWeight: 700,
-                margin: "0 0 16px"
-              }}
-            >
-              My Trips
-            </h2>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "0 0 16px" }}>
+              <h2
+                style={{
+                  fontFamily: Ft.h,
+                  fontSize: 20,
+                  fontWeight: 700,
+                  margin: 0
+                }}
+              >
+                My Trips
+              </h2>
+              <Btn
+                small
+                onClick={() => setMyShowRejected(r => !r)}
+                color={myShowRejected ? P.red : P.blk}
+              >
+                {myShowRejected ? `← Active` : `✕ Rejected (${myRejectedTrips.length})`}
+              </Btn>
+            </div>
             <div
               style={{
                 background: "#fff",
@@ -1692,7 +1704,7 @@ export default function App() {
                 {settings.irs_rate}/mi
               </div>
             </div>
-            {myTrips.slice(0, 50).flatMap((t, i, arr) => {
+            {(myShowRejected ? myRejectedTrips : myActiveTrips).slice(0, 50).flatMap((t, i, arr) => {
               const prev = arr[i - 1];
               const monthSep = i > 0 && t.trip_date.slice(0, 7) !== prev.trip_date.slice(0, 7);
               const dateSep = !monthSep && i > 0 && t.trip_date !== prev.trip_date;
@@ -1789,7 +1801,7 @@ export default function App() {
                   ]
                 : [card];
             })}
-            {myTrips.length === 0 && (
+            {(myShowRejected ? myRejectedTrips : myActiveTrips).length === 0 && (
               <div
                 style={{
                   padding: 40,
@@ -1798,7 +1810,7 @@ export default function App() {
                   fontFamily: Ft.m
                 }}
               >
-                No trips logged yet
+                {myShowRejected ? "No rejected trips" : "No trips logged yet"}
               </div>
             )}
           </div>
