@@ -80,39 +80,27 @@ async function getDrivingMiles(from, to) {
   }
 }
 
-function getPayPeriod(date, anchor, freq = "biweekly", time = "12:00") {
-  const [hours, minutes] = time.split(':').map(Number);
-  
-  const now = new Date();
-  const currentDateTime = new Date(date + 'T00:00:00');
-  currentDateTime.setHours(now.getHours(), now.getMinutes(), 0, 0);
-  
-  const anchorDateTime = new Date(anchor + 'T' + time + ':00');
-  
-  let periodDays;
-  if (freq === "weekly") periodDays = 7;
-  else if (freq === "monthly") periodDays = 30;
-  else periodDays = 14;
-  
-  const msPerPeriod = periodDays * 24 * 60 * 60 * 1000;
-  const timeDiff = currentDateTime.getTime() - anchorDateTime.getTime();
-  const periodsSinceAnchor = Math.floor(timeDiff / msPerPeriod);
-  
-  const periodStartTime = new Date(anchorDateTime.getTime() + (periodsSinceAnchor * msPerPeriod));
-  const periodEndTime = new Date(periodStartTime.getTime() + msPerPeriod);
-  periodEndTime.setDate(periodEndTime.getDate() - 1);
-  
-  const formatDate = (d) => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
+function getPayPeriod(date, anchor, freq = "biweekly", time = "12:00", tz = "America/Denver") {
+  const [hh, mm] = time.split(":").map(Number);
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false
+  });
+  const p = Object.fromEntries(fmt.formatToParts(new Date()).map(x => [x.type, x.value]));
+  const nH = +p.hour === 24 ? 0 : +p.hour;
+  const [aY, aM, aD] = anchor.split("-").map(Number);
+  const aMin = Date.UTC(aY, aM - 1, aD, hh, mm) / 60000;
+  const nMin = Date.UTC(+p.year, +p.month - 1, +p.day, nH, +p.minute) / 60000;
+  const pd = freq === "weekly" ? 7 : freq === "monthly" ? 30 : 14;
+  const pm = pd * 1440;
+  const idx = Math.floor((nMin - aMin) / pm);
+  const sMin = aMin + idx * pm;
+  const eMin = sMin + pm - 1440;
+  const fmt2 = m => {
+    const d = new Date(m * 60000);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
   };
-  
-  return {
-    start: formatDate(periodStartTime),
-    end: formatDate(periodEndTime)
-  };
+  return { start: fmt2(sMin), end: fmt2(eMin) };
 }
 
 function fmtDate(d) {
@@ -512,6 +500,12 @@ export default function App() {
   const [emailTo, setEmailTo] = useState("");
   const [manualMod, setManualMod] = useState(false);
   const [manualMiles, setManualMiles] = useState("");
+  const [editMod, setEditMod] = useState(false);
+  const [editT, setET] = useState(null);
+  const [edFr, setEdFr] = useState("");
+  const [edTo, setEdTo] = useState("");
+  const [edDt, setEdDt] = useState("");
+  const [edNt, setEdNt] = useState("");
 
   const show = useCallback(m => {
     setToast({ m, s: true });
@@ -772,6 +766,61 @@ export default function App() {
       show("Deleted");
     } catch (e) {
       show("Error");
+    }
+  };
+
+  const openEdit = t => {
+    setET(t);
+    setEdFr(t.from_project_id);
+    setEdTo(t.to_project_id);
+    setEdDt(t.trip_date);
+    setEdNt(t.note || "");
+    setEditMod(true);
+  };
+
+  const saveEdit = async () => {
+    if (!edFr || !edTo) {
+      show("Pick from and to");
+      return;
+    }
+    const fP = projs.find(p => p.id === edFr);
+    const tP = projs.find(p => p.id === edTo);
+    let miles = Number(editT.miles);
+    let reimb = Number(editT.reimbursement);
+    if (edFr !== editT.from_project_id || edTo !== editT.to_project_id) {
+      setCalc(true);
+      const fG = await geocode(fP.address);
+      const tG = await geocode(tP.address);
+      if (fG && tG) {
+        const m = await getDrivingMiles(fG, tG);
+        if (m) {
+          miles = m;
+          reimb = Math.round(m * settings.irs_rate * 100) / 100;
+        }
+      }
+      setCalc(false);
+    }
+    try {
+      await api(`trips?id=eq.${editT.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          from_project_id: fP.id,
+          from_project_name: fP.name,
+          from_address: fP.address,
+          to_project_id: tP.id,
+          to_project_name: tP.name,
+          to_address: tP.address,
+          trip_date: edDt,
+          note: edNt,
+          miles,
+          reimbursement: reimb
+        })
+      });
+      await load();
+      setEditMod(false);
+      show("Trip updated");
+    } catch (e) {
+      show("Error updating");
     }
   };
 
@@ -1427,65 +1476,94 @@ export default function App() {
                 >
                   Today's Trips
                 </h3>
-                {todayTrips.map(t => (
-                  <div
-                    key={t.id}
-                    style={{
-                      padding: "12px 14px",
-                      background: "#fff",
-                      borderRadius: 12,
-                      border: `1px solid ${P.bdr}`,
-                      marginBottom: 8
-                    }}
-                  >
+                {todayTrips.flatMap((t, i, arr) => {
+                  const sep = i > 0 && t.trip_date !== arr[i - 1].trip_date;
+                  const card = (
                     <div
+                      key={t.id}
                       style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "flex-start"
+                        padding: "12px 14px",
+                        background: "#fff",
+                        borderRadius: 12,
+                        border: `1px solid ${P.bdr}`,
+                        marginBottom: 8
                       }}
                     >
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 600 }}>
-                          {t.from_project_name} → {t.to_project_name}
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start"
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 600 }}>
+                            {t.from_project_name} → {t.to_project_name}
+                          </div>
+                          {t.note && (
+                            <div
+                              style={{
+                                fontSize: 12,
+                                color: P.lt,
+                                marginTop: 2,
+                                fontStyle: "italic"
+                              }}
+                            >
+                              {t.note}
+                            </div>
+                          )}
                         </div>
-                        {t.note && (
+                        <div style={{ textAlign: "right" }}>
+                          <div
+                            style={{
+                              fontSize: 18,
+                              fontWeight: 700,
+                              fontFamily: Ft.h,
+                              color: P.red
+                            }}
+                          >
+                            {Number(t.miles).toFixed(1)} mi
+                          </div>
                           <div
                             style={{
                               fontSize: 12,
-                              color: P.lt,
-                              marginTop: 2,
-                              fontStyle: "italic"
+                              color: P.grn,
+                              fontFamily: Ft.m
                             }}
                           >
-                            {t.note}
+                            ${Number(t.reimbursement).toFixed(2)}
                           </div>
-                        )}
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div
-                          style={{
-                            fontSize: 18,
-                            fontWeight: 700,
-                            fontFamily: Ft.h,
-                            color: P.red
-                          }}
-                        >
-                          {Number(t.miles).toFixed(1)} mi
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 12,
-                            color: P.grn,
-                            fontFamily: Ft.m
-                          }}
-                        >
-                          ${Number(t.reimbursement).toFixed(2)}
                         </div>
                       </div>
+                      {(isA || t.user_id === user?.id) && (
+                        <button
+                          onClick={() => openEdit(t)}
+                          style={{
+                            fontSize: 11,
+                            color: P.mid,
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            marginTop: 6,
+                            fontFamily: Ft.m,
+                            padding: 0
+                          }}
+                        >
+                          ✏️ Edit
+                        </button>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                  return sep
+                    ? [
+                        <div
+                          key={`sep-${t.id}`}
+                          style={{ borderTop: "2px solid #ddd", margin: "16px 0" }}
+                        />,
+                        card
+                      ]
+                    : [card];
+                })}
               </>
             )}
           </div>
@@ -1570,60 +1648,87 @@ export default function App() {
                 {settings.irs_rate}/mi
               </div>
             </div>
-            {myTrips.slice(0, 50).map(t => (
-              <div
-                key={t.id}
-                style={{
-                  padding: "12px 14px",
-                  background: "#fff",
-                  borderRadius: 12,
-                  border: `1px solid ${P.bdr}`,
-                  marginBottom: 8
-                }}
-              >
+            {myTrips.slice(0, 50).flatMap((t, i, arr) => {
+              const sep = i > 0 && t.trip_date !== arr[i - 1].trip_date;
+              const card = (
                 <div
+                  key={t.id}
                   style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start"
+                    padding: "12px 14px",
+                    background: "#fff",
+                    borderRadius: 12,
+                    border: `1px solid ${P.bdr}`,
+                    marginBottom: 8
                   }}
                 >
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 600 }}>
-                      {t.from_project_name} → {t.to_project_name}
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start"
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>
+                        {t.from_project_name} → {t.to_project_name}
+                      </div>
+                      <div
+                        style={{ fontSize: 11, color: P.lt, fontFamily: Ft.m, marginTop: 2 }}
+                      >
+                        {fmtDateFull(t.trip_date)}
+                        {t.note && ` · ${t.note}`}
+                      </div>
                     </div>
-                    <div
-                      style={{ fontSize: 11, color: P.lt, fontFamily: Ft.m, marginTop: 2 }}
-                    >
-                      {fmtDateFull(t.trip_date)}
-                      {t.note && ` · ${t.note}`}
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 16, fontWeight: 700, fontFamily: Ft.h }}>
+                        {Number(t.miles).toFixed(1)} mi
+                      </div>
+                      <div style={{ fontSize: 12, color: P.grn, fontFamily: Ft.m }}>
+                        ${Number(t.reimbursement).toFixed(2)}
+                      </div>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontFamily: Ft.m,
+                          color:
+                            t.status === "approved"
+                              ? P.grn
+                              : t.status === "rejected"
+                              ? P.red
+                              : P.amb
+                        }}
+                      >
+                        {t.status}
+                      </span>
                     </div>
                   </div>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 16, fontWeight: 700, fontFamily: Ft.h }}>
-                      {Number(t.miles).toFixed(1)} mi
-                    </div>
-                    <div style={{ fontSize: 12, color: P.grn, fontFamily: Ft.m }}>
-                      ${Number(t.reimbursement).toFixed(2)}
-                    </div>
-                    <span
-                      style={{
-                        fontSize: 10,
-                        fontFamily: Ft.m,
-                        color:
-                          t.status === "approved"
-                            ? P.grn
-                            : t.status === "rejected"
-                            ? P.red
-                            : P.amb
-                      }}
-                    >
-                      {t.status}
-                    </span>
-                  </div>
+                  <button
+                    onClick={() => openEdit(t)}
+                    style={{
+                      fontSize: 11,
+                      color: P.mid,
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      marginTop: 6,
+                      fontFamily: Ft.m,
+                      padding: 0
+                    }}
+                  >
+                    ✏️ Edit
+                  </button>
                 </div>
-              </div>
-            ))}
+              );
+              return sep
+                ? [
+                    <div
+                      key={`sep-${t.id}`}
+                      style={{ borderTop: "2px solid #ddd", margin: "16px 0" }}
+                    />,
+                    card
+                  ]
+                : [card];
+            })}
             {myTrips.length === 0 && (
               <div
                 style={{
@@ -1893,107 +1998,134 @@ export default function App() {
                     </Btn>
                   </div>
                 </div>
-                {reportTrips.slice(0, 100).map(t => (
-                  <div
-                    key={t.id}
-                    style={{
-                      padding: "12px 14px",
-                      background: "#fff",
-                      borderRadius: 12,
-                      border: `1px solid ${P.bdr}`,
-                      marginBottom: 8
-                    }}
-                  >
+                {reportTrips.slice(0, 100).flatMap((t, i, arr) => {
+                  const sep = i > 0 && t.trip_date !== arr[i - 1].trip_date;
+                  const card = (
                     <div
+                      key={t.id}
                       style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "flex-start"
+                        padding: "12px 14px",
+                        background: "#fff",
+                        borderRadius: 12,
+                        border: `1px solid ${P.bdr}`,
+                        marginBottom: 8
                       }}
                     >
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: P.red }}>
-                          {t.user_name}
-                        </div>
-                        <div style={{ fontSize: 14, fontWeight: 600 }}>
-                          {t.from_project_name} → {t.to_project_name}
-                        </div>
-                        <div
-                          style={{ fontSize: 11, color: P.lt, fontFamily: Ft.m, marginTop: 2 }}
-                        >
-                          {fmtDateFull(t.trip_date)}
-                        </div>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 16, fontWeight: 700, fontFamily: Ft.h }}>
-                          {Number(t.miles).toFixed(1)} mi
-                        </div>
-                        <div style={{ fontSize: 12, color: P.grn, fontFamily: Ft.m }}>
-                          ${Number(t.reimbursement).toFixed(2)}
-                        </div>
-                        <span
-                          style={{
-                            fontSize: 10,
-                            fontFamily: Ft.m,
-                            padding: "2px 6px",
-                            borderRadius: 4,
-                            background:
-                              t.status === "approved"
-                                ? P.gBg
-                                : t.status === "rejected"
-                                ? P.rBg
-                                : P.aBg,
-                            color:
-                              t.status === "approved"
-                                ? P.grn
-                                : t.status === "rejected"
-                                ? P.red
-                                : P.amb
-                          }}
-                        >
-                          {t.status}
-                        </span>
-                      </div>
-                    </div>
-                    {isA && t.status === "logged" && (
-                      <div style={{ display: "flex", gap: 8, marginTop: 10 }} className="no-print">
-                        <Btn
-                          small
-                          color={P.grn}
-                          onClick={() => approveTrip(t.id)}
-                          sx={{ flex: 1 }}
-                        >
-                          ✓ Approve
-                        </Btn>
-                        <Btn
-                          small
-                          color={P.red}
-                          onClick={() => rejectTrip(t.id)}
-                          sx={{ flex: 1 }}
-                        >
-                          ✕ Reject
-                        </Btn>
-                      </div>
-                    )}
-                    {isA && (
-                      <button
-                        onClick={() => deleteTrip(t.id)}
+                      <div
                         style={{
-                          fontSize: 11,
-                          color: P.lt,
-                          background: "none",
-                          border: "none",
-                          cursor: "pointer",
-                          marginTop: 6,
-                          fontFamily: Ft.m
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "flex-start"
                         }}
-                        className="no-print"
                       >
-                        Delete trip
-                      </button>
-                    )}
-                  </div>
-                ))}
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: P.red }}>
+                            {t.user_name}
+                          </div>
+                          <div style={{ fontSize: 14, fontWeight: 600 }}>
+                            {t.from_project_name} → {t.to_project_name}
+                          </div>
+                          <div
+                            style={{ fontSize: 11, color: P.lt, fontFamily: Ft.m, marginTop: 2 }}
+                          >
+                            {fmtDateFull(t.trip_date)}
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: 16, fontWeight: 700, fontFamily: Ft.h }}>
+                            {Number(t.miles).toFixed(1)} mi
+                          </div>
+                          <div style={{ fontSize: 12, color: P.grn, fontFamily: Ft.m }}>
+                            ${Number(t.reimbursement).toFixed(2)}
+                          </div>
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontFamily: Ft.m,
+                              padding: "2px 6px",
+                              borderRadius: 4,
+                              background:
+                                t.status === "approved"
+                                  ? P.gBg
+                                  : t.status === "rejected"
+                                  ? P.rBg
+                                  : P.aBg,
+                              color:
+                                t.status === "approved"
+                                  ? P.grn
+                                  : t.status === "rejected"
+                                  ? P.red
+                                  : P.amb
+                            }}
+                          >
+                            {t.status}
+                          </span>
+                        </div>
+                      </div>
+                      {isA && t.status === "logged" && (
+                        <div style={{ display: "flex", gap: 8, marginTop: 10 }} className="no-print">
+                          <Btn
+                            small
+                            color={P.grn}
+                            onClick={() => approveTrip(t.id)}
+                            sx={{ flex: 1 }}
+                          >
+                            ✓ Approve
+                          </Btn>
+                          <Btn
+                            small
+                            color={P.red}
+                            onClick={() => rejectTrip(t.id)}
+                            sx={{ flex: 1 }}
+                          >
+                            ✕ Reject
+                          </Btn>
+                        </div>
+                      )}
+                      {isA && (
+                        <div style={{ display: "flex", gap: 14, marginTop: 6 }} className="no-print">
+                          <button
+                            onClick={() => openEdit(t)}
+                            style={{
+                              fontSize: 11,
+                              color: P.mid,
+                              background: "none",
+                              border: "none",
+                              cursor: "pointer",
+                              fontFamily: Ft.m,
+                              padding: 0
+                            }}
+                          >
+                            ✏️ Edit
+                          </button>
+                          <button
+                            onClick={() => deleteTrip(t.id)}
+                            style={{
+                              fontSize: 11,
+                              color: P.lt,
+                              background: "none",
+                              border: "none",
+                              cursor: "pointer",
+                              fontFamily: Ft.m,
+                              padding: 0
+                            }}
+                          >
+                            Delete trip
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                  return sep
+                    ? [
+                        <div
+                          key={`sep-${t.id}`}
+                          style={{ borderTop: "2px solid #ddd", margin: "16px 0" }}
+                        />,
+                        card
+                      ]
+                    : [card];
+                })}
                 {reportTrips.length === 0 && (
                   <div
                     style={{
@@ -2470,6 +2602,54 @@ export default function App() {
         )}
         <Btn full disabled={!manualMiles || parseFloat(manualMiles) <= 0} onClick={saveManualTrip}>
           Log Trip
+        </Btn>
+      </Modal>
+
+      <Modal open={editMod} onClose={() => setEditMod(false)} title="Edit Trip">
+        <Fl label="From">
+          <select
+            style={{ ...iS, appearance: "none" }}
+            value={edFr}
+            onChange={e => setEdFr(e.target.value)}
+          >
+            <option value="">Select starting project...</option>
+            {projs.filter(p => p.address).map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </Fl>
+        <Fl label="To">
+          <select
+            style={{ ...iS, appearance: "none" }}
+            value={edTo}
+            onChange={e => setEdTo(e.target.value)}
+          >
+            <option value="">Select destination project...</option>
+            {projs.filter(p => p.address && p.id !== edFr).map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </Fl>
+        {isA && (
+          <Fl label="Trip Date (Admin Only)">
+            <input
+              style={iS}
+              type="date"
+              value={edDt}
+              onChange={e => setEdDt(e.target.value)}
+            />
+          </Fl>
+        )}
+        <Fl label="Note">
+          <input
+            style={iS}
+            value={edNt}
+            onChange={e => setEdNt(e.target.value)}
+            placeholder="optional"
+          />
+        </Fl>
+        <Btn full disabled={!edFr || !edTo || calculating} onClick={saveEdit}>
+          {calculating ? "Recalculating..." : "Save Changes"}
         </Btn>
       </Modal>
 
