@@ -80,16 +80,24 @@ async function getDrivingMiles(from, to) {
   }
 }
 
-function getPayPeriod(date, anchor) {
-  const d = new Date(date);
-  const a = new Date(anchor);
-  const diff = Math.floor((d - a) / (14 * 86400000));
-  const start = new Date(a.getTime() + diff * 14 * 86400000);
-  const end = new Date(start.getTime() + 13 * 86400000);
+function getPayPeriod(date, anchor, freq = "biweekly", time = "12:00") {
+  const d = new Date(date + "T" + time + ":00");
+  const a = new Date(anchor + "T" + time + ":00");
+  
+  let days;
+  if (freq === "weekly") days = 7;
+  else if (freq === "monthly") days = 30;
+  else days = 14;
+  
+  const diff = Math.floor((d - a) / (days * 86400000));
+  const start = new Date(a.getTime() + diff * days * 86400000);
+  const end = new Date(start.getTime() + (days - 1) * 86400000);
+  
   if (d < start) {
-    start.setTime(start.getTime() - 14 * 86400000);
-    end.setTime(end.getTime() - 14 * 86400000);
+    start.setTime(start.getTime() - days * 86400000);
+    end.setTime(end.getTime() - days * 86400000);
   }
+  
   return {
     start: start.toISOString().slice(0, 10),
     end: end.toISOString().slice(0, 10)
@@ -449,7 +457,9 @@ export default function App() {
   const [trips, setTrips] = useState([]);
   const [settings, setSettings] = useState({
     irs_rate: 0.70,
-    pay_period_anchor: "2026-01-06"
+    pay_period_anchor: "2026-01-07",
+    pay_period_frequency: "biweekly",
+    pay_period_time: "12:00"
   });
   const [users, setUsr] = useState([]);
   const [tab, setTab] = useState("log");
@@ -464,6 +474,8 @@ export default function App() {
   const [reportPeriod, setReportPeriod] = useState("current");
   const [settingsRate, setSettingsRate] = useState("");
   const [settingsAnchor, setSettingsAnchor] = useState("");
+  const [settingsFreq, setSettingsFreq] = useState("biweekly");
+  const [settingsTime, setSettingsTime] = useState("12:00");
   const [toast, setToast] = useState({ m: "", s: false });
   const [loaded, setLoaded] = useState(false);
   const [adPg, setAdPg] = useState("hub");
@@ -508,6 +520,8 @@ export default function App() {
         setSettings(s[0]);
         setSettingsRate(s[0].irs_rate.toString());
         setSettingsAnchor(s[0].pay_period_anchor);
+        setSettingsFreq(s[0].pay_period_frequency || "biweekly");
+        setSettingsTime(s[0].pay_period_time || "12:00");
       }
     } catch (e) {
       console.error(e);
@@ -695,6 +709,8 @@ export default function App() {
         body: JSON.stringify({
           irs_rate: parseFloat(settingsRate) || 0.70,
           pay_period_anchor: settingsAnchor,
+          pay_period_frequency: settingsFreq,
+          pay_period_time: settingsTime,
           updated_at: new Date().toISOString()
         })
       });
@@ -801,7 +817,7 @@ export default function App() {
   };
 
   const myTrips = trips.filter(t => t.user_id === user?.id);
-  const pp = getPayPeriod(today(), settings.pay_period_anchor);
+  const pp = getPayPeriod(today(), settings.pay_period_anchor, settings.pay_period_frequency, settings.pay_period_time);
   const todayTrips = myTrips.filter(t => t.trip_date === today());
   const ppTrips = myTrips.filter(
     t => t.trip_date >= pp.start && t.trip_date <= pp.end
@@ -813,11 +829,8 @@ export default function App() {
 
   const reportTrips = trips.filter(t => {
     if (reportUser !== "all" && t.user_id !== reportUser) return false;
-    if (reportPeriod === "current") {
-      const inPeriod = t.trip_date >= pp.start && t.trip_date <= pp.end;
-      console.log(`Trip ${t.id}: ${t.trip_date}, Pay Period: ${pp.start} to ${pp.end}, In Period: ${inPeriod}`);
-      return inPeriod;
-    }
+    if (reportPeriod === "current")
+      return t.trip_date >= pp.start && t.trip_date <= pp.end;
     if (reportPeriod === "ytd") return t.trip_date >= `${thisYear()}-01-01`;
     return true;
   });
@@ -1347,7 +1360,7 @@ export default function App() {
                   fontFamily: Ft.m
                 }}
               >
-                IRS Rate: ${settings.irs_rate}/mile · Pay Period:{" "}
+                IRS Rate: ${settings.irs_rate}/mile · {settings.pay_period_frequency === "weekly" ? "Weekly" : settings.pay_period_frequency === "monthly" ? "Monthly" : "Bi-weekly"} Period:{" "}
                 {fmtDate(pp.start)} – {fmtDate(pp.end)}
               </div>
             </div>
@@ -1502,7 +1515,7 @@ export default function App() {
                 </div>
               </div>
               <div style={{ marginTop: 12, fontSize: 11, color: P.lt, fontFamily: Ft.m }}>
-                Pay Period: {fmtDate(pp.start)} – {fmtDate(pp.end)} · Rate: $
+                {settings.pay_period_frequency === "weekly" ? "Weekly" : settings.pay_period_frequency === "monthly" ? "Monthly" : "Bi-weekly"} Period: {fmtDate(pp.start)} – {fmtDate(pp.end)} · Rate: $
                 {settings.irs_rate}/mi
               </div>
             </div>
@@ -2303,12 +2316,31 @@ export default function App() {
                   >
                     PAY PERIOD
                   </h3>
-                  <Fl label="Bi-weekly Anchor Date (any past pay period start date)">
+                  <Fl label="Pay Period Frequency">
+                    <select
+                      style={iS}
+                      value={settingsFreq}
+                      onChange={e => setSettingsFreq(e.target.value)}
+                    >
+                      <option value="weekly">Weekly (7 days)</option>
+                      <option value="biweekly">Bi-weekly (14 days)</option>
+                      <option value="monthly">Monthly (30 days)</option>
+                    </select>
+                  </Fl>
+                  <Fl label="Pay Period Start Date (anchor date)">
                     <input
                       style={iS}
                       type="date"
                       value={settingsAnchor}
                       onChange={e => setSettingsAnchor(e.target.value)}
+                    />
+                  </Fl>
+                  <Fl label="Pay Period Start Time (Mountain Time)">
+                    <input
+                      style={iS}
+                      type="time"
+                      value={settingsTime}
+                      onChange={e => setSettingsTime(e.target.value)}
                     />
                   </Fl>
                   <div
@@ -2319,8 +2351,8 @@ export default function App() {
                       marginBottom: 12
                     }}
                   >
-                    Enter the start date of any pay period. The app calculates all
-                    other periods from this date in 2-week increments.
+                    Set when pay periods start. Default is 12:00 PM MT on the anchor date. 
+                    The app calculates all periods from this date/time based on your selected frequency.
                   </div>
                 </div>
                 <Btn full onClick={saveSettings}>
