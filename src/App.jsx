@@ -119,11 +119,7 @@ function fmtDateFull(d) {
 }
 
 function today() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Denver", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 }
 
 function thisYear() {
@@ -524,7 +520,7 @@ export default function App() {
         api("yard_users?order=name")
       ]);
       setProjs(p);
-      setTrips(t);
+      setTrips(t.map(x => ({ ...x, trip_date: typeof x.trip_date === "string" ? x.trip_date.slice(0, 10) : x.trip_date })));
       setUsr(u);
       if (s && s.length > 0) {
         setSettings(s[0]);
@@ -1535,7 +1531,7 @@ export default function App() {
                           </div>
                         </div>
                       </div>
-                      {(isA || t.user_id === user?.id) && (
+                      {isA && (
                         <button
                           onClick={() => openEdit(t)}
                           style={{
@@ -1702,21 +1698,23 @@ export default function App() {
                       </span>
                     </div>
                   </div>
-                  <button
-                    onClick={() => openEdit(t)}
-                    style={{
-                      fontSize: 11,
-                      color: P.mid,
-                      background: "none",
-                      border: "none",
-                      cursor: "pointer",
-                      marginTop: 6,
-                      fontFamily: Ft.m,
-                      padding: 0
-                    }}
-                  >
-                    ✏️ Edit
-                  </button>
+                  {isA && (
+                    <button
+                      onClick={() => openEdit(t)}
+                      style={{
+                        fontSize: 11,
+                        color: P.mid,
+                        background: "none",
+                        border: "none",
+                        cursor: "pointer",
+                        marginTop: 6,
+                        fontFamily: Ft.m,
+                        padding: 0
+                      }}
+                    >
+                      ✏️ Edit
+                    </button>
+                  )}
                 </div>
               );
               return sep
