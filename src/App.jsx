@@ -472,6 +472,7 @@ export default function App() {
   const [nPA, setNPA] = useState("");
   const [reportUser, setReportUser] = useState("all");
   const [reportPeriod, setReportPeriod] = useState("current");
+  const [reportMonth, setReportMonth] = useState(today().slice(0, 7));
   const [settingsRate, setSettingsRate] = useState("");
   const [settingsAnchor, setSettingsAnchor] = useState("");
   const [settingsFreq, setSettingsFreq] = useState("biweekly");
@@ -502,6 +503,8 @@ export default function App() {
   const [edTo, setEdTo] = useState("");
   const [edDt, setEdDt] = useState("");
   const [edNt, setEdNt] = useState("");
+  const [shareMod, setShareMod] = useState(false);
+  const [sharePhones, setSharePhones] = useState("");
 
   const show = useCallback(m => {
     setToast({ m, s: true });
@@ -820,6 +823,20 @@ export default function App() {
     }
   };
 
+  const shareApp = () => {
+    const phones = sharePhones.split(/[,\n;]/).map(p => p.replace(/\D/g, "")).filter(p => p.length >= 10);
+    if (phones.length === 0) {
+      show("Enter valid phone number(s)");
+      return;
+    }
+    const url = window.location.origin;
+    const body = `Masterpiece Mileage Tracker — log your trips here: ${url}`;
+    window.location.href = `sms:${phones.join(",")}?&body=${encodeURIComponent(body)}`;
+    setShareMod(false);
+    setSharePhones("");
+    show("Opening messages...");
+  };
+
   const togUser = async (id, a) => {
     try {
       await api(`yard_users?id=eq.${id}`, {
@@ -905,9 +922,10 @@ export default function App() {
     if (reportPeriod === "current") {
       periodMatch = t.trip_date >= pp.start && t.trip_date <= pp.end;
     } else if (reportPeriod === "monthly") {
-      const now = new Date();
-      const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
-      periodMatch = t.trip_date >= monthStart;
+      const [my, mm] = reportMonth.split("-").map(Number);
+      const monthStart = `${reportMonth}-01`;
+      const monthEnd = `${reportMonth}-${String(new Date(my, mm, 0).getDate()).padStart(2, "0")}`;
+      periodMatch = t.trip_date >= monthStart && t.trip_date <= monthEnd;
     } else if (reportPeriod === "ytd") {
       periodMatch = t.trip_date >= `${thisYear()}-01-01`;
     }
@@ -1001,7 +1019,7 @@ export default function App() {
     
     try {
       const periodLabel = reportPeriod === 'current' ? 'Current Pay Period' : reportPeriod === 'monthly' ? 'Monthly Mileage' : reportPeriod === 'ytd' ? 'Year to Date' : 'All Time';
-      const periodDates = reportPeriod === 'current' ? `${fmtDate(pp.start)} - ${fmtDate(pp.end)}` : reportPeriod === 'monthly' ? new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : reportPeriod === 'ytd' ? `${thisYear()} YTD` : 'All Time';
+      const periodDates = reportPeriod === 'current' ? `${fmtDate(pp.start)} - ${fmtDate(pp.end)}` : reportPeriod === 'monthly' ? new Date(reportMonth + '-01T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : reportPeriod === 'ytd' ? `${thisYear()} YTD` : 'All Time';
       const subject = `Mileage Report - ${periodLabel}`;
       const body = `Mileage Report\n\nPeriod: ${periodDates}\n${reportUser !== 'all' ? `Employee: ${users.find(u => u.id === reportUser)?.name}\n` : ''}Total Miles: ${reportMiles.toFixed(1)}\nTotal Reimbursement: $${reportReimb.toFixed(2)}\nTrips: ${reportTrips.length}\n\nCSV Report attached below:\n\n${csv}`;
       
@@ -1921,6 +1939,14 @@ export default function App() {
                     <option value="ytd">Year to Date</option>
                     <option value="all">All Time</option>
                   </select>
+                  {reportPeriod === "monthly" && (
+                    <input
+                      type="month"
+                      value={reportMonth}
+                      onChange={e => setReportMonth(e.target.value)}
+                      style={{ ...iS, width: "auto", flex: 1 }}
+                    />
+                  )}
                 </div>
                 <div
                   style={{
@@ -2244,11 +2270,17 @@ export default function App() {
                     l: "Settings",
                     d: "IRS rate & pay periods",
                     c: P.tan
+                  },
+                  {
+                    k: "share",
+                    l: "Share App",
+                    d: "Send app link via SMS",
+                    c: P.blk
                   }
                 ].map(p => (
                   <button
                     key={p.k}
-                    onClick={() => setAdPg(p.k)}
+                    onClick={() => p.k === "share" ? setShareMod(true) : setAdPg(p.k)}
                     style={{
                       display: "block",
                       width: "100%",
@@ -2742,6 +2774,26 @@ export default function App() {
         </div>
         <Btn full disabled={!emailTo.trim()} onClick={emailReport}>
           Send Email
+        </Btn>
+      </Modal>
+
+      <Modal open={shareMod} onClose={() => setShareMod(false)} title="Share App">
+        <div style={{ fontSize: 13, color: P.mid, marginBottom: 12, fontFamily: Ft.m }}>
+          Enter phone numbers (one per line, or comma-separated):
+        </div>
+        <Fl label="Phone Numbers">
+          <textarea
+            style={{ ...iS, minHeight: 110, fontFamily: Ft.m, resize: "vertical" }}
+            value={sharePhones}
+            onChange={e => setSharePhones(e.target.value)}
+            placeholder={"555-123-4567\n555-987-6543"}
+          />
+        </Fl>
+        <div style={{ fontSize: 12, color: P.lt, marginBottom: 16, fontFamily: Ft.m }}>
+          Opens your messages app with the app link prefilled. Numbers must be 10+ digits.
+        </div>
+        <Btn full disabled={!sharePhones.trim()} onClick={shareApp}>
+          Send via SMS
         </Btn>
       </Modal>
 
