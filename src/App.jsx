@@ -54,6 +54,22 @@ async function geocode(address) {
     console.error("Nominatim error:", e);
   }
   
+  try {
+    await new Promise(r => setTimeout(r, 300));
+    const arcUrl = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&maxLocations=1&singleLine=${encodeURIComponent(address)}`;
+    console.log("Trying ArcGIS:", arcUrl);
+    const arcRes = await fetch(arcUrl);
+    const arcData = await arcRes.json();
+    if (arcData && arcData.candidates && arcData.candidates.length > 0) {
+      const loc = arcData.candidates[0].location;
+      console.log("ArcGIS success:", loc);
+      return { lat: loc.y, lng: loc.x };
+    }
+    console.log("ArcGIS failed");
+  } catch (e) {
+    console.error("ArcGIS error:", e);
+  }
+  
   console.error("All geocoding services failed for:", address);
   return null;
 }
@@ -1673,7 +1689,9 @@ export default function App() {
               </div>
             </div>
             {myTrips.slice(0, 50).flatMap((t, i, arr) => {
-              const sep = i > 0 && t.trip_date !== arr[i - 1].trip_date;
+              const prev = arr[i - 1];
+              const monthSep = i > 0 && t.trip_date.slice(0, 7) !== prev.trip_date.slice(0, 7);
+              const dateSep = !monthSep && i > 0 && t.trip_date !== prev.trip_date;
               const card = (
                 <div
                   key={t.id}
@@ -1745,7 +1763,19 @@ export default function App() {
                   )}
                 </div>
               );
-              return sep
+              return monthSep
+                ? [
+                    <div
+                      key={`mb-${t.id}`}
+                      style={{ borderTop: `2px solid ${P.blk}`, margin: "20px 0 0" }}
+                    />,
+                    <div
+                      key={`mr-${t.id}`}
+                      style={{ borderTop: `2px solid ${P.red}`, margin: "0 0 16px" }}
+                    />,
+                    card
+                  ]
+                : dateSep
                 ? [
                     <div
                       key={`sep-${t.id}`}
@@ -2034,7 +2064,9 @@ export default function App() {
                 </div>
                 <div style={{ borderTop: `2px solid ${P.red}`, margin: "16px 0" }} />
                 {reportTrips.slice(0, 100).flatMap((t, i, arr) => {
-                  const sep = i > 0 && t.user_name !== arr[i - 1].user_name;
+                  const prev = arr[i - 1];
+                  const userSep = i > 0 && t.user_name !== prev.user_name;
+                  const monthSep = !userSep && i > 0 && (reportPeriod === "ytd" || reportPeriod === "all") && t.trip_date.slice(0, 7) !== prev.trip_date.slice(0, 7);
                   const card = (
                     <div
                       key={t.id}
@@ -2151,11 +2183,23 @@ export default function App() {
                       )}
                     </div>
                   );
-                  return sep
+                  return userSep
                     ? [
                         <div
-                          key={`sep-${t.id}`}
+                          key={`us-${t.id}`}
                           style={{ borderTop: `2px solid ${P.red}`, margin: "16px 0" }}
+                        />,
+                        card
+                      ]
+                    : monthSep
+                    ? [
+                        <div
+                          key={`mb-${t.id}`}
+                          style={{ borderTop: `2px solid ${P.blk}`, margin: "20px 0 0" }}
+                        />,
+                        <div
+                          key={`mr-${t.id}`}
+                          style={{ borderTop: `2px solid ${P.red}`, margin: "0 0 16px" }}
                         />,
                         card
                       ]
