@@ -505,6 +505,7 @@ export default function App() {
   const [euE, setEUE] = useState("");
   const [euP, setEUP] = useState("");
   const [delUserMod, setDUM] = useState(null);
+  const [delTripMod, setDTM] = useState(null);
   const [emailMod, setEmailMod] = useState(false);
   const [emailTo, setEmailTo] = useState("");
   const [manualMod, setManualMod] = useState(false);
@@ -2110,7 +2111,7 @@ export default function App() {
                             ✏️ Edit
                           </button>
                           <button
-                            onClick={() => deleteTrip(t.id)}
+                            onClick={() => setDTM(t)}
                             style={{
                               fontSize: 11,
                               color: P.lt,
@@ -2642,6 +2643,38 @@ export default function App() {
         >
           Save
         </Btn>
+      </Modal>
+
+      <Modal
+        open={!!delTripMod}
+        onClose={() => setDTM(null)}
+        title="Delete Trip?"
+      >
+        <p style={{ color: P.mid, marginBottom: 20 }}>
+          Permanently delete{" "}
+          <strong>{delTripMod?.from_project_name} → {delTripMod?.to_project_name}</strong>
+          {" "}({Number(delTripMod?.miles || 0).toFixed(1)} mi) on {delTripMod && fmtDateFull(delTripMod.trip_date)}? This cannot be undone.
+        </p>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={() => setDTM(null)}
+            style={{
+              flex: 1,
+              padding: 12,
+              borderRadius: 10,
+              border: `1.5px solid ${P.bdr}`,
+              background: "#fff",
+              color: P.mid,
+              fontWeight: 600,
+              cursor: "pointer"
+            }}
+          >
+            Cancel
+          </button>
+          <Btn full color={P.red} onClick={async () => { await deleteTrip(delTripMod.id); setDTM(null); }} sx={{ flex: 1 }}>
+            Delete
+          </Btn>
+        </div>
       </Modal>
 
       <Modal
