@@ -412,10 +412,12 @@ function Nav({ tab, set, admin }) {
   const ts = [
     { k: "log", l: "Log Trip" },
     { k: "trips", l: "My Trips" },
-    { k: "projects", l: "Projects" },
-    { k: "reports", l: "Reports" }
+    { k: "projects", l: "Projects" }
   ];
-  if (admin) ts.push({ k: "admin", l: "Admin" });
+  if (admin) {
+    ts.push({ k: "reports", l: "Reports" });
+    ts.push({ k: "admin", l: "Admin" });
+  }
 
   return (
     <nav
@@ -498,19 +500,11 @@ export default function App() {
   const [toast, setToast] = useState({ m: "", s: false });
   const [loaded, setLoaded] = useState(false);
   const [adPg, setAdPg] = useState("hub");
-  const [adAuth, setAdAuth] = useState(false);
-  const [aaName, setAAN] = useState("");
-  const [aaPin, setAAP] = useState("");
-  const [aaErr, setAAE] = useState("");
   const [editUser, setEU] = useState(null);
   const [euN, setEUN] = useState("");
   const [euE, setEUE] = useState("");
   const [euP, setEUP] = useState("");
   const [delUserMod, setDUM] = useState(null);
-  const [rptAuth, setRptAuth] = useState(false);
-  const [raName, setRAN] = useState("");
-  const [raPin, setRAP] = useState("");
-  const [raErr, setRAE] = useState("");
   const [emailMod, setEmailMod] = useState(false);
   const [emailTo, setEmailTo] = useState("");
   const [manualMod, setManualMod] = useState(false);
@@ -1302,11 +1296,7 @@ export default function App() {
               setUser(null);
               setAN("");
               setAP("");
-              setAdAuth(false);
               setAdPg("hub");
-              setRptAuth(false);
-              setRAN("");
-              setRAP("");
             }}
             style={{
               background: P.tBg,
@@ -1880,80 +1870,9 @@ export default function App() {
           </div>
         )}
 
-        {tab === "reports" && (
+        {tab === "reports" && isA && (
           <div style={{ animation: "fadeIn .3s ease" }}>
-            {isA && !rptAuth ? (
-              <div style={{ maxWidth: 340, margin: "40px auto", textAlign: "center" }}>
-                <h2
-                  style={{
-                    fontFamily: Ft.h,
-                    fontSize: 20,
-                    fontWeight: 700,
-                    marginBottom: 20
-                  }}
-                >
-                  Reports Access
-                </h2>
-                <Fl label="Name">
-                  <input
-                    style={iS}
-                    value={raName}
-                    onChange={e => setRAN(e.target.value)}
-                  />
-                </Fl>
-                <Fl label="PIN">
-                  <input
-                    style={{
-                      ...iS,
-                      textAlign: "center",
-                      fontSize: 24,
-                      letterSpacing: 12,
-                      fontFamily: Ft.m
-                    }}
-                    maxLength={4}
-                    value={raPin}
-                    onChange={e => setRAP(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                    placeholder="----"
-                    onKeyDown={e => {
-                      if (e.key === "Enter") {
-                        if (
-                          raName.toLowerCase() === user.name.toLowerCase() &&
-                          raPin === user.pin
-                        )
-                          setRptAuth(true);
-                        else setRAE("Invalid.");
-                      }
-                    }}
-                  />
-                </Fl>
-                {raErr && (
-                  <div
-                    style={{
-                      color: P.red,
-                      fontSize: 13,
-                      marginBottom: 12,
-                      fontFamily: Ft.m
-                    }}
-                  >
-                    {raErr}
-                  </div>
-                )}
-                <Btn
-                  full
-                  onClick={() => {
-                    if (
-                      raName.toLowerCase() === user.name.toLowerCase() &&
-                      raPin === user.pin
-                    )
-                      setRptAuth(true);
-                    else setRAE("Invalid.");
-                  }}
-                >
-                  Unlock Reports
-                </Btn>
-              </div>
-            ) : (
-              <>
+            <>
                 <h2
                   style={{
                     fontFamily: Ft.h,
@@ -2243,85 +2162,12 @@ export default function App() {
                   </div>
                 )}
               </>
-            )}
           </div>
         )}
 
         {tab === "admin" && isA && (
           <div style={{ animation: "fadeIn .3s ease" }}>
-            {!adAuth && (
-              <div style={{ maxWidth: 340, margin: "40px auto", textAlign: "center" }}>
-                <h2
-                  style={{
-                    fontFamily: Ft.h,
-                    fontSize: 20,
-                    fontWeight: 700,
-                    marginBottom: 20
-                  }}
-                >
-                  Admin Access
-                </h2>
-                <Fl label="Name">
-                  <input
-                    style={iS}
-                    value={aaName}
-                    onChange={e => setAAN(e.target.value)}
-                  />
-                </Fl>
-                <Fl label="PIN">
-                  <input
-                    style={{
-                      ...iS,
-                      textAlign: "center",
-                      fontSize: 24,
-                      letterSpacing: 12,
-                      fontFamily: Ft.m
-                    }}
-                    maxLength={4}
-                    value={aaPin}
-                    onChange={e => setAAP(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                    placeholder="----"
-                    onKeyDown={e => {
-                      if (e.key === "Enter") {
-                        if (
-                          aaName.toLowerCase() === user.name.toLowerCase() &&
-                          aaPin === user.pin
-                        )
-                          setAdAuth(true);
-                        else setAAE("Invalid.");
-                      }
-                    }}
-                  />
-                </Fl>
-                {aaErr && (
-                  <div
-                    style={{
-                      color: P.red,
-                      fontSize: 13,
-                      marginBottom: 12,
-                      fontFamily: Ft.m
-                    }}
-                  >
-                    {aaErr}
-                  </div>
-                )}
-                <Btn
-                  full
-                  onClick={() => {
-                    if (
-                      aaName.toLowerCase() === user.name.toLowerCase() &&
-                      aaPin === user.pin
-                    )
-                      setAdAuth(true);
-                    else setAAE("Invalid.");
-                  }}
-                >
-                  Unlock
-                </Btn>
-              </div>
-            )}
-
-            {adAuth && adPg === "hub" && (
+            {adPg === "hub" && (
               <div>
                 <h2
                   style={{
@@ -2377,7 +2223,7 @@ export default function App() {
               </div>
             )}
 
-            {adAuth && adPg === "employees" && (
+            {adPg === "employees" && (
               <div>
                 <button
                   onClick={() => setAdPg("hub")}
@@ -2532,7 +2378,7 @@ export default function App() {
               </div>
             )}
 
-            {adAuth && adPg === "settings" && (
+            {adPg === "settings" && (
               <div>
                 <button
                   onClick={() => setAdPg("hub")}
@@ -2876,17 +2722,7 @@ export default function App() {
         tab={tab}
         set={t => {
           setTab(t);
-          if (t !== "admin") {
-            setAdPg("hub");
-            setAdAuth(false);
-            setAAN("");
-            setAAP("");
-          }
-          if (t !== "reports") {
-            setRptAuth(false);
-            setRAN("");
-            setRAP("");
-          }
+          if (t !== "admin") setAdPg("hub");
         }}
         admin={isA}
       />
