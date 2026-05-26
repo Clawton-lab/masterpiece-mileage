@@ -488,6 +488,7 @@ export default function App() {
   const [nPA, setNPA] = useState("");
   const [reportUser, setReportUser] = useState("all");
   const [reportPeriod, setReportPeriod] = useState("current");
+  const [reportView, setReportView] = useState("employee");
   const [settingsRate, setSettingsRate] = useState("");
   const [settingsAnchor, setSettingsAnchor] = useState("");
   const [settingsFreq, setSettingsFreq] = useState("biweekly");
@@ -1812,6 +1813,14 @@ export default function App() {
                     <option value="ytd">Year to Date</option>
                     <option value="all">All Time</option>
                   </select>
+                  <select
+                    value={reportView}
+                    onChange={e => setReportView(e.target.value)}
+                    style={{ ...iS, width: "auto", flex: 1 }}
+                  >
+                    <option value="employee">By Employee</option>
+                    <option value="project">By Project</option>
+                  </select>
                 </div>
                 <div
                   style={{
@@ -1993,6 +2002,42 @@ export default function App() {
                     )}
                   </div>
                   );
+                  if (reportView === "project") {
+                    const groups = reportTrips.reduce((acc, t) => {
+                      const key = t.to_project_id || t.to_project_name;
+                      if (!acc[key]) acc[key] = { name: t.to_project_name, trips: [] };
+                      acc[key].trips.push(t);
+                      return acc;
+                    }, {});
+                    return Object.entries(groups).sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([pid, g]) => {
+                      const pM = g.trips.reduce((s, t) => s + Number(t.miles), 0);
+                      const pR = g.trips.reduce((s, t) => s + Number(t.reimbursement || 0), 0);
+                      return (
+                        <div key={pid}>
+                          {g.trips.map(renderTrip)}
+                          <div style={{
+                            padding: "14px 18px",
+                            background: P.tBg,
+                            borderRadius: 12,
+                            border: `2px solid ${P.tan}`,
+                            marginBottom: 24,
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center"
+                          }}>
+                            <div>
+                              <div style={{ fontSize: 10, color: P.mid, fontFamily: Ft.m, textTransform: "uppercase", letterSpacing: 0.5 }}>Project Total</div>
+                              <div style={{ fontSize: 17, fontWeight: 700, color: P.red, fontFamily: Ft.h }}>{g.name}</div>
+                            </div>
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ fontSize: 22, fontWeight: 700, fontFamily: Ft.h }}>{pM.toFixed(1)} mi</div>
+                              <div style={{ fontSize: 12, color: P.grn, fontFamily: Ft.m }}>${pR.toFixed(2)} · {g.trips.length} trips</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    });
+                  }
                   if (reportUser === "all") {
                     const groups = reportTrips.reduce((acc, t) => {
                       if (!acc[t.user_id]) acc[t.user_id] = { name: t.user_name, trips: [] };
