@@ -495,7 +495,7 @@ export default function App() {
   const [toast, setToast] = useState({ m: "", s: false });
   const [loaded, setLoaded] = useState(false);
   const [adPg, setAdPg] = useState("hub");
-  const [adAuth, setAdAuth] = useState(false);
+  const [adAuth, setAdAuth] = useState(true);
   const [aaName, setAAN] = useState("");
   const [aaPin, setAAP] = useState("");
   const [aaErr, setAAE] = useState("");
@@ -504,7 +504,7 @@ export default function App() {
   const [euE, setEUE] = useState("");
   const [euP, setEUP] = useState("");
   const [delUserMod, setDUM] = useState(null);
-  const [rptAuth, setRptAuth] = useState(false);
+  const [rptAuth, setRptAuth] = useState(true);
   const [raName, setRAN] = useState("");
   const [raPin, setRAP] = useState("");
   const [raErr, setRAE] = useState("");
@@ -1206,9 +1206,7 @@ export default function App() {
               setUser(null);
               setAN("");
               setAP("");
-              setAdAuth(false);
               setAdPg("hub");
-              setRptAuth(false);
               setRAN("");
               setRAP("");
             }}
@@ -2606,12 +2604,10 @@ export default function App() {
           setTab(t);
           if (t !== "admin") {
             setAdPg("hub");
-            setAdAuth(false);
             setAAN("");
             setAAP("");
           }
           if (t !== "reports") {
-            setRptAuth(false);
             setRAN("");
             setRAP("");
           }
