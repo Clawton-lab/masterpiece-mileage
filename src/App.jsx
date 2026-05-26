@@ -54,22 +54,6 @@ async function geocode(address) {
     console.error("Nominatim error:", e);
   }
   
-  try {
-    await new Promise(r => setTimeout(r, 300));
-    const arcUrl = `https://geocode.arcgis.com/arcgis/rest/services/World/GeocodeServer/findAddressCandidates?f=json&maxLocations=1&singleLine=${encodeURIComponent(address)}`;
-    console.log("Trying ArcGIS:", arcUrl);
-    const arcRes = await fetch(arcUrl);
-    const arcData = await arcRes.json();
-    if (arcData && arcData.candidates && arcData.candidates.length > 0) {
-      const loc = arcData.candidates[0].location;
-      console.log("ArcGIS success:", loc);
-      return { lat: loc.y, lng: loc.x };
-    }
-    console.log("ArcGIS failed");
-  } catch (e) {
-    console.error("ArcGIS error:", e);
-  }
-  
   console.error("All geocoding services failed for:", address);
   return null;
 }
@@ -96,27 +80,39 @@ async function getDrivingMiles(from, to) {
   }
 }
 
-function getPayPeriod(date, anchor, freq = "biweekly", time = "12:00", tz = "America/Denver") {
-  const [hh, mm] = time.split(":").map(Number);
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hour12: false
-  });
-  const p = Object.fromEntries(fmt.formatToParts(new Date()).map(x => [x.type, x.value]));
-  const nH = +p.hour === 24 ? 0 : +p.hour;
-  const [aY, aM, aD] = anchor.split("-").map(Number);
-  const aMin = Date.UTC(aY, aM - 1, aD, hh, mm) / 60000;
-  const nMin = Date.UTC(+p.year, +p.month - 1, +p.day, nH, +p.minute) / 60000;
-  const pd = freq === "weekly" ? 7 : freq === "monthly" ? 30 : 14;
-  const pm = pd * 1440;
-  const idx = Math.floor((nMin - aMin) / pm);
-  const sMin = aMin + idx * pm;
-  const eMin = sMin + pm - 1440;
-  const fmt2 = m => {
-    const d = new Date(m * 60000);
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+function getPayPeriod(date, anchor, freq = "biweekly", time = "12:00") {
+  const [hours, minutes] = time.split(':').map(Number);
+  
+  const now = new Date();
+  const currentDateTime = new Date(date + 'T00:00:00');
+  currentDateTime.setHours(now.getHours(), now.getMinutes(), 0, 0);
+  
+  const anchorDateTime = new Date(anchor + 'T' + time + ':00');
+  
+  let periodDays;
+  if (freq === "weekly") periodDays = 7;
+  else if (freq === "monthly") periodDays = 30;
+  else periodDays = 14;
+  
+  const msPerPeriod = periodDays * 24 * 60 * 60 * 1000;
+  const timeDiff = currentDateTime.getTime() - anchorDateTime.getTime();
+  const periodsSinceAnchor = Math.floor(timeDiff / msPerPeriod);
+  
+  const periodStartTime = new Date(anchorDateTime.getTime() + (periodsSinceAnchor * msPerPeriod));
+  const periodEndTime = new Date(periodStartTime.getTime() + msPerPeriod);
+  periodEndTime.setDate(periodEndTime.getDate() - 1);
+  
+  const formatDate = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
   };
-  return { start: fmt2(sMin), end: fmt2(eMin) };
+  
+  return {
+    start: formatDate(periodStartTime),
+    end: formatDate(periodEndTime)
+  };
 }
 
 function fmtDate(d) {
@@ -135,7 +131,11 @@ function fmtDateFull(d) {
 }
 
 function today() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Denver", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function thisYear() {
@@ -412,12 +412,10 @@ function Nav({ tab, set, admin }) {
   const ts = [
     { k: "log", l: "Log Trip" },
     { k: "trips", l: "My Trips" },
-    { k: "projects", l: "Projects" }
+    { k: "projects", l: "Projects" },
+    { k: "reports", l: "Reports" }
   ];
-  if (admin) {
-    ts.push({ k: "reports", l: "Reports" });
-    ts.push({ k: "admin", l: "Admin" });
-  }
+  if (admin) ts.push({ k: "admin", l: "Admin" });
 
   return (
     <nav
@@ -490,9 +488,6 @@ export default function App() {
   const [nPA, setNPA] = useState("");
   const [reportUser, setReportUser] = useState("all");
   const [reportPeriod, setReportPeriod] = useState("current");
-  const [reportMonth, setReportMonth] = useState(today().slice(0, 7));
-  const [showRejected, setShowRejected] = useState(false);
-  const [myShowRejected, setMyShowRejected] = useState(false);
   const [settingsRate, setSettingsRate] = useState("");
   const [settingsAnchor, setSettingsAnchor] = useState("");
   const [settingsFreq, setSettingsFreq] = useState("biweekly");
@@ -500,24 +495,23 @@ export default function App() {
   const [toast, setToast] = useState({ m: "", s: false });
   const [loaded, setLoaded] = useState(false);
   const [adPg, setAdPg] = useState("hub");
+  const [adAuth, setAdAuth] = useState(false);
+  const [aaName, setAAN] = useState("");
+  const [aaPin, setAAP] = useState("");
+  const [aaErr, setAAE] = useState("");
   const [editUser, setEU] = useState(null);
   const [euN, setEUN] = useState("");
   const [euE, setEUE] = useState("");
   const [euP, setEUP] = useState("");
   const [delUserMod, setDUM] = useState(null);
-  const [delTripMod, setDTM] = useState(null);
+  const [rptAuth, setRptAuth] = useState(false);
+  const [raName, setRAN] = useState("");
+  const [raPin, setRAP] = useState("");
+  const [raErr, setRAE] = useState("");
   const [emailMod, setEmailMod] = useState(false);
   const [emailTo, setEmailTo] = useState("");
   const [manualMod, setManualMod] = useState(false);
   const [manualMiles, setManualMiles] = useState("");
-  const [editMod, setEditMod] = useState(false);
-  const [editT, setET] = useState(null);
-  const [edFr, setEdFr] = useState("");
-  const [edTo, setEdTo] = useState("");
-  const [edDt, setEdDt] = useState("");
-  const [edNt, setEdNt] = useState("");
-  const [shareMod, setShareMod] = useState(false);
-  const [sharePhones, setSharePhones] = useState("");
 
   const show = useCallback(m => {
     setToast({ m, s: true });
@@ -536,7 +530,7 @@ export default function App() {
         api("yard_users?order=name")
       ]);
       setProjs(p);
-      setTrips(t.map(x => ({ ...x, trip_date: typeof x.trip_date === "string" ? x.trip_date.slice(0, 10) : x.trip_date })));
+      setTrips(t);
       setUsr(u);
       if (s && s.length > 0) {
         setSettings(s[0]);
@@ -781,81 +775,6 @@ export default function App() {
     }
   };
 
-  const openEdit = t => {
-    setET(t);
-    setEdFr(t.from_project_id);
-    setEdTo(t.to_project_id);
-    setEdDt(t.trip_date);
-    setEdNt(t.note || "");
-    setEditMod(true);
-  };
-
-  const saveEdit = async () => {
-    if (!edFr || !edTo) {
-      show("Pick from and to");
-      return;
-    }
-    const fP = projs.find(p => p.id === edFr);
-    const tP = projs.find(p => p.id === edTo);
-    let miles = Number(editT.miles);
-    let reimb = Number(editT.reimbursement);
-    if (edFr !== editT.from_project_id || edTo !== editT.to_project_id) {
-      setCalc(true);
-      const fG = await geocode(fP.address);
-      const tG = await geocode(tP.address);
-      if (fG && tG) {
-        const m = await getDrivingMiles(fG, tG);
-        if (m) {
-          miles = m;
-          reimb = Math.round(m * settings.irs_rate * 100) / 100;
-        }
-      }
-      setCalc(false);
-    }
-    try {
-      await api(`trips?id=eq.${editT.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          from_project_id: fP.id,
-          from_project_name: fP.name,
-          from_address: fP.address,
-          to_project_id: tP.id,
-          to_project_name: tP.name,
-          to_address: tP.address,
-          trip_date: edDt,
-          note: edNt,
-          miles,
-          reimbursement: reimb
-        })
-      });
-      await load();
-      setEditMod(false);
-      show("Trip updated");
-    } catch (e) {
-      show("Error updating");
-    }
-  };
-
-  const shareApp = () => {
-    const phones = sharePhones.split(/[,\n;]/).map(p => p.replace(/\D/g, "")).filter(p => p.length >= 10);
-    if (phones.length === 0) {
-      show("Enter valid phone number(s)");
-      return;
-    }
-    const url = window.location.origin;
-    const body = `Masterpiece Mileage Tracker - log your trips here: ${url}`;
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const sep = isIOS ? "&" : "?";
-    try {
-      window.location.href = `sms:${phones.join(",")}${sep}body=${encodeURIComponent(body)}`;
-      setShareMod(false);
-      setSharePhones("");
-      show("Opening messages...");
-    } catch (e) {
-      show("Could not open messages app");
-    }
-  };
-
   const togUser = async (id, a) => {
     try {
       await api(`yard_users?id=eq.${id}`, {
@@ -916,17 +835,15 @@ export default function App() {
   };
 
   const myTrips = trips.filter(t => t.user_id === user?.id);
-  const myActiveTrips = myTrips.filter(t => t.status !== "rejected");
-  const myRejectedTrips = myTrips.filter(t => t.status === "rejected").sort((a, b) => (b.trip_date || "").localeCompare(a.trip_date || ""));
   const pp = getPayPeriod(today(), settings.pay_period_anchor, settings.pay_period_frequency, settings.pay_period_time);
   const todayTrips = myTrips.filter(t => t.trip_date === today());
   const ppTrips = myTrips.filter(
     t => t.trip_date >= pp.start && t.trip_date <= pp.end
   );
   const ytdTrips = myTrips.filter(t => t.trip_date >= `${thisYear()}-01-01`);
-  const todayMiles = todayTrips.reduce((s, t) => t.status === "rejected" ? s : s + Number(t.miles), 0);
-  const ppMiles = ppTrips.reduce((s, t) => t.status === "rejected" ? s : s + Number(t.miles), 0);
-  const ytdMiles = ytdTrips.reduce((s, t) => t.status === "rejected" ? s : s + Number(t.miles), 0);
+  const todayMiles = todayTrips.reduce((s, t) => s + Number(t.miles), 0);
+  const ppMiles = ppTrips.reduce((s, t) => s + Number(t.miles), 0);
+  const ytdMiles = ytdTrips.reduce((s, t) => s + Number(t.miles), 0);
 
   console.log("=== REPORTS DEBUG ===");
   console.log("Total trips loaded:", trips.length);
@@ -936,30 +853,22 @@ export default function App() {
   console.log("reportPeriod:", reportPeriod);
   console.log("Current user:", user?.name, "Role:", user?.role, "ID:", user?.id);
   
-  const allFilteredTrips = trips.filter(t => {
+  const reportTrips = trips.filter(t => {
     const userMatch = reportUser === "all" || t.user_id === reportUser;
     let periodMatch = true;
     
     if (reportPeriod === "current") {
       periodMatch = t.trip_date >= pp.start && t.trip_date <= pp.end;
     } else if (reportPeriod === "monthly") {
-      const [my, mm] = reportMonth.split("-").map(Number);
-      const monthStart = `${reportMonth}-01`;
-      const monthEnd = `${reportMonth}-${String(new Date(my, mm, 0).getDate()).padStart(2, "0")}`;
-      periodMatch = t.trip_date >= monthStart && t.trip_date <= monthEnd;
+      const now = new Date();
+      const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      periodMatch = t.trip_date >= monthStart;
     } else if (reportPeriod === "ytd") {
       periodMatch = t.trip_date >= `${thisYear()}-01-01`;
     }
     
     return userMatch && periodMatch;
-  }).sort((a, b) => {
-    if (a.user_id === user?.id && b.user_id !== user?.id) return -1;
-    if (b.user_id === user?.id && a.user_id !== user?.id) return 1;
-    return (a.user_name || "").localeCompare(b.user_name || "");
   });
-  const activeTrips = allFilteredTrips.filter(t => t.status !== "rejected");
-  const rejectedTrips = allFilteredTrips.filter(t => t.status === "rejected");
-  const reportTrips = showRejected ? rejectedTrips : activeTrips;
   
   console.log("Filtered report trips:", reportTrips.length);
   console.log("Report trip details:", reportTrips.map(t => ({date: t.trip_date, user: t.user_name, miles: t.miles})));
@@ -1043,7 +952,7 @@ export default function App() {
     
     try {
       const periodLabel = reportPeriod === 'current' ? 'Current Pay Period' : reportPeriod === 'monthly' ? 'Monthly Mileage' : reportPeriod === 'ytd' ? 'Year to Date' : 'All Time';
-      const periodDates = reportPeriod === 'current' ? `${fmtDate(pp.start)} - ${fmtDate(pp.end)}` : reportPeriod === 'monthly' ? new Date(reportMonth + '-01T12:00:00').toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : reportPeriod === 'ytd' ? `${thisYear()} YTD` : 'All Time';
+      const periodDates = reportPeriod === 'current' ? `${fmtDate(pp.start)} - ${fmtDate(pp.end)}` : reportPeriod === 'monthly' ? new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : reportPeriod === 'ytd' ? `${thisYear()} YTD` : 'All Time';
       const subject = `Mileage Report - ${periodLabel}`;
       const body = `Mileage Report\n\nPeriod: ${periodDates}\n${reportUser !== 'all' ? `Employee: ${users.find(u => u.id === reportUser)?.name}\n` : ''}Total Miles: ${reportMiles.toFixed(1)}\nTotal Reimbursement: $${reportReimb.toFixed(2)}\nTrips: ${reportTrips.length}\n\nCSV Report attached below:\n\n${csv}`;
       
@@ -1297,7 +1206,11 @@ export default function App() {
               setUser(null);
               setAN("");
               setAP("");
+              setAdAuth(false);
               setAdPg("hub");
+              setRptAuth(false);
+              setRAN("");
+              setRAP("");
             }}
             style={{
               background: P.tBg,
@@ -1514,94 +1427,65 @@ export default function App() {
                 >
                   Today's Trips
                 </h3>
-                {todayTrips.flatMap((t, i, arr) => {
-                  const sep = i > 0 && t.trip_date !== arr[i - 1].trip_date;
-                  const card = (
+                {todayTrips.map(t => (
+                  <div
+                    key={t.id}
+                    style={{
+                      padding: "12px 14px",
+                      background: "#fff",
+                      borderRadius: 12,
+                      border: `1px solid ${P.bdr}`,
+                      marginBottom: 8
+                    }}
+                  >
                     <div
-                      key={t.id}
                       style={{
-                        padding: "12px 14px",
-                        background: "#fff",
-                        borderRadius: 12,
-                        border: `1px solid ${P.bdr}`,
-                        marginBottom: 8
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start"
                       }}
                     >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "flex-start"
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontSize: 14, fontWeight: 600 }}>
-                            {t.from_project_name} → {t.to_project_name}
-                          </div>
-                          {t.note && (
-                            <div
-                              style={{
-                                fontSize: 12,
-                                color: P.lt,
-                                marginTop: 2,
-                                fontStyle: "italic"
-                              }}
-                            >
-                              {t.note}
-                            </div>
-                          )}
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 600 }}>
+                          {t.from_project_name} → {t.to_project_name}
                         </div>
-                        <div style={{ textAlign: "right" }}>
-                          <div
-                            style={{
-                              fontSize: 18,
-                              fontWeight: 700,
-                              fontFamily: Ft.h,
-                              color: P.red
-                            }}
-                          >
-                            {Number(t.miles).toFixed(1)} mi
-                          </div>
+                        {t.note && (
                           <div
                             style={{
                               fontSize: 12,
-                              color: P.grn,
-                              fontFamily: Ft.m
+                              color: P.lt,
+                              marginTop: 2,
+                              fontStyle: "italic"
                             }}
                           >
-                            ${Number(t.reimbursement).toFixed(2)}
+                            {t.note}
                           </div>
-                        </div>
+                        )}
                       </div>
-                      {isA && (
-                        <button
-                          onClick={() => openEdit(t)}
+                      <div style={{ textAlign: "right" }}>
+                        <div
                           style={{
-                            fontSize: 11,
-                            color: P.mid,
-                            background: "none",
-                            border: "none",
-                            cursor: "pointer",
-                            marginTop: 6,
-                            fontFamily: Ft.m,
-                            padding: 0
+                            fontSize: 18,
+                            fontWeight: 700,
+                            fontFamily: Ft.h,
+                            color: P.red
                           }}
                         >
-                          ✏️ Edit
-                        </button>
-                      )}
-                    </div>
-                  );
-                  return sep
-                    ? [
+                          {Number(t.miles).toFixed(1)} mi
+                        </div>
                         <div
-                          key={`sep-${t.id}`}
-                          style={{ borderTop: `2px solid ${P.red}`, margin: "16px 0" }}
-                        />,
-                        card
-                      ]
-                    : [card];
-                })}
+                          style={{
+                            fontSize: 12,
+                            color: P.grn,
+                            fontFamily: Ft.m
+                          }}
+                        >
+                          ${Number(t.reimbursement).toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </>
             )}
           </div>
@@ -1609,25 +1493,16 @@ export default function App() {
 
         {tab === "trips" && (
           <div style={{ animation: "fadeIn .3s ease" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "0 0 16px" }}>
-              <h2
-                style={{
-                  fontFamily: Ft.h,
-                  fontSize: 20,
-                  fontWeight: 700,
-                  margin: 0
-                }}
-              >
-                My Trips
-              </h2>
-              <Btn
-                small
-                onClick={() => setMyShowRejected(r => !r)}
-                color={myShowRejected ? P.red : P.blk}
-              >
-                {myShowRejected ? `← Active` : `✕ Rejected (${myRejectedTrips.length})`}
-              </Btn>
-            </div>
+            <h2
+              style={{
+                fontFamily: Ft.h,
+                fontSize: 20,
+                fontWeight: 700,
+                margin: "0 0 16px"
+              }}
+            >
+              My Trips
+            </h2>
             <div
               style={{
                 background: "#fff",
@@ -1695,104 +1570,61 @@ export default function App() {
                 {settings.irs_rate}/mi
               </div>
             </div>
-            {(myShowRejected ? myRejectedTrips : myActiveTrips).slice(0, 50).flatMap((t, i, arr) => {
-              const prev = arr[i - 1];
-              const monthSep = i > 0 && t.trip_date.slice(0, 7) !== prev.trip_date.slice(0, 7);
-              const dateSep = !monthSep && i > 0 && t.trip_date !== prev.trip_date;
-              const card = (
+            {myTrips.slice(0, 50).map(t => (
+              <div
+                key={t.id}
+                style={{
+                  padding: "12px 14px",
+                  background: "#fff",
+                  borderRadius: 12,
+                  border: `1px solid ${P.bdr}`,
+                  marginBottom: 8
+                }}
+              >
                 <div
-                  key={t.id}
                   style={{
-                    padding: "12px 14px",
-                    background: "#fff",
-                    borderRadius: 12,
-                    border: `1px solid ${P.bdr}`,
-                    marginBottom: 8
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start"
                   }}
                 >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start"
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontSize: 14, fontWeight: 600 }}>
-                        {t.from_project_name} → {t.to_project_name}
-                      </div>
-                      <div
-                        style={{ fontSize: 11, color: P.lt, fontFamily: Ft.m, marginTop: 2 }}
-                      >
-                        {fmtDateFull(t.trip_date)}
-                        {t.note && ` · ${t.note}`}
-                      </div>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>
+                      {t.from_project_name} → {t.to_project_name}
                     </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 16, fontWeight: 700, fontFamily: Ft.h }}>
-                        {Number(t.miles).toFixed(1)} mi
-                      </div>
-                      <div style={{ fontSize: 12, color: P.grn, fontFamily: Ft.m }}>
-                        ${Number(t.reimbursement).toFixed(2)}
-                      </div>
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontFamily: Ft.m,
-                          color:
-                            t.status === "approved"
-                              ? P.grn
-                              : t.status === "rejected"
-                              ? P.red
-                              : P.amb
-                        }}
-                      >
-                        {t.status}
-                      </span>
+                    <div
+                      style={{ fontSize: 11, color: P.lt, fontFamily: Ft.m, marginTop: 2 }}
+                    >
+                      {fmtDateFull(t.trip_date)}
+                      {t.note && ` · ${t.note}`}
                     </div>
                   </div>
-                  {isA && (
-                    <button
-                      onClick={() => openEdit(t)}
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 16, fontWeight: 700, fontFamily: Ft.h }}>
+                      {Number(t.miles).toFixed(1)} mi
+                    </div>
+                    <div style={{ fontSize: 12, color: P.grn, fontFamily: Ft.m }}>
+                      ${Number(t.reimbursement).toFixed(2)}
+                    </div>
+                    <span
                       style={{
-                        fontSize: 11,
-                        color: P.mid,
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        marginTop: 6,
+                        fontSize: 10,
                         fontFamily: Ft.m,
-                        padding: 0
+                        color:
+                          t.status === "approved"
+                            ? P.grn
+                            : t.status === "rejected"
+                            ? P.red
+                            : P.amb
                       }}
                     >
-                      ✏️ Edit
-                    </button>
-                  )}
+                      {t.status}
+                    </span>
+                  </div>
                 </div>
-              );
-              return monthSep
-                ? [
-                    <div
-                      key={`mb-${t.id}`}
-                      style={{ borderTop: `2px solid ${P.blk}`, margin: "20px 0 0" }}
-                    />,
-                    <div
-                      key={`mr-${t.id}`}
-                      style={{ borderTop: `2px solid ${P.red}`, margin: "0 0 16px" }}
-                    />,
-                    card
-                  ]
-                : dateSep
-                ? [
-                    <div
-                      key={`sep-${t.id}`}
-                      style={{ borderTop: `2px solid ${P.red}`, margin: "16px 0" }}
-                    />,
-                    card
-                  ]
-                : [card];
-            })}
-            {(myShowRejected ? myRejectedTrips : myActiveTrips).length === 0 && (
+              </div>
+            ))}
+            {myTrips.length === 0 && (
               <div
                 style={{
                   padding: 40,
@@ -1801,7 +1633,7 @@ export default function App() {
                   fontFamily: Ft.m
                 }}
               >
-                {myShowRejected ? "No rejected trips" : "No trips logged yet"}
+                No trips logged yet
               </div>
             )}
           </div>
@@ -1871,9 +1703,80 @@ export default function App() {
           </div>
         )}
 
-        {tab === "reports" && isA && (
+        {tab === "reports" && (
           <div style={{ animation: "fadeIn .3s ease" }}>
-            <>
+            {isA && !rptAuth ? (
+              <div style={{ maxWidth: 340, margin: "40px auto", textAlign: "center" }}>
+                <h2
+                  style={{
+                    fontFamily: Ft.h,
+                    fontSize: 20,
+                    fontWeight: 700,
+                    marginBottom: 20
+                  }}
+                >
+                  Reports Access
+                </h2>
+                <Fl label="Name">
+                  <input
+                    style={iS}
+                    value={raName}
+                    onChange={e => setRAN(e.target.value)}
+                  />
+                </Fl>
+                <Fl label="PIN">
+                  <input
+                    style={{
+                      ...iS,
+                      textAlign: "center",
+                      fontSize: 24,
+                      letterSpacing: 12,
+                      fontFamily: Ft.m
+                    }}
+                    maxLength={4}
+                    value={raPin}
+                    onChange={e => setRAP(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    placeholder="----"
+                    onKeyDown={e => {
+                      if (e.key === "Enter") {
+                        if (
+                          raName.toLowerCase() === user.name.toLowerCase() &&
+                          raPin === user.pin
+                        )
+                          setRptAuth(true);
+                        else setRAE("Invalid.");
+                      }
+                    }}
+                  />
+                </Fl>
+                {raErr && (
+                  <div
+                    style={{
+                      color: P.red,
+                      fontSize: 13,
+                      marginBottom: 12,
+                      fontFamily: Ft.m
+                    }}
+                  >
+                    {raErr}
+                  </div>
+                )}
+                <Btn
+                  full
+                  onClick={() => {
+                    if (
+                      raName.toLowerCase() === user.name.toLowerCase() &&
+                      raPin === user.pin
+                    )
+                      setRptAuth(true);
+                    else setRAE("Invalid.");
+                  }}
+                >
+                  Unlock Reports
+                </Btn>
+              </div>
+            ) : (
+              <>
                 <h2
                   style={{
                     fontFamily: Ft.h,
@@ -1911,14 +1814,6 @@ export default function App() {
                     <option value="ytd">Year to Date</option>
                     <option value="all">All Time</option>
                   </select>
-                  {reportPeriod === "monthly" && (
-                    <input
-                      type="month"
-                      value={reportMonth}
-                      onChange={e => setReportMonth(e.target.value)}
-                      style={{ ...iS, width: "auto", flex: 1 }}
-                    />
-                  )}
                 </div>
                 <div
                   style={{
@@ -1974,22 +1869,13 @@ export default function App() {
                   </div>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 16, flexWrap: "wrap" }} className="no-print">
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <Btn
-                      small
-                      onClick={exportCSV}
-                      color={P.tan}
-                    >
-                      📥 Export CSV
-                    </Btn>
-                    <Btn
-                      small
-                      onClick={() => setShowRejected(r => !r)}
-                      color={showRejected ? P.red : P.blk}
-                    >
-                      {showRejected ? `← Active` : `✕ Rejected (${rejectedTrips.length})`}
-                    </Btn>
-                  </div>
+                  <Btn
+                    small
+                    onClick={exportCSV}
+                    color={P.tan}
+                  >
+                    📥 Export CSV
+                  </Btn>
                   <div style={{ display: "flex", gap: 8 }}>
                     <Btn
                       small
@@ -2007,149 +1893,145 @@ export default function App() {
                     </Btn>
                   </div>
                 </div>
-                <div style={{ borderTop: `2px solid ${P.red}`, margin: "16px 0" }} />
-                {reportTrips.slice(0, 100).flatMap((t, i, arr) => {
-                  const prev = arr[i - 1];
-                  const userSep = i > 0 && t.user_name !== prev.user_name;
-                  const monthSep = !userSep && i > 0 && (reportPeriod === "ytd" || reportPeriod === "all") && t.trip_date.slice(0, 7) !== prev.trip_date.slice(0, 7);
-                  const card = (
+                {(() => {
+                  const renderTrip = (t) => (
+                  <div
+                    key={t.id}
+                    style={{
+                      padding: "12px 14px",
+                      background: "#fff",
+                      borderRadius: 12,
+                      border: `1px solid ${P.bdr}`,
+                      marginBottom: 8
+                    }}
+                  >
                     <div
-                      key={t.id}
                       style={{
-                        padding: "12px 14px",
-                        background: "#fff",
-                        borderRadius: 12,
-                        border: `1px solid ${P.bdr}`,
-                        marginBottom: 8
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "flex-start"
                       }}
                     >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "flex-start"
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: P.red }}>
-                            {t.user_name}
-                          </div>
-                          <div style={{ fontSize: 14, fontWeight: 600 }}>
-                            {t.from_project_name} → {t.to_project_name}
-                          </div>
-                          <div
-                            style={{ fontSize: 11, color: P.lt, fontFamily: Ft.m, marginTop: 2 }}
-                          >
-                            {fmtDateFull(t.trip_date)}
-                          </div>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: P.red }}>
+                          {t.user_name}
                         </div>
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ fontSize: 16, fontWeight: 700, fontFamily: Ft.h }}>
-                            {Number(t.miles).toFixed(1)} mi
-                          </div>
-                          <div style={{ fontSize: 12, color: P.grn, fontFamily: Ft.m }}>
-                            ${Number(t.reimbursement).toFixed(2)}
-                          </div>
-                          <span
-                            style={{
-                              fontSize: 10,
-                              fontFamily: Ft.m,
-                              padding: "2px 6px",
-                              borderRadius: 4,
-                              background:
-                                t.status === "approved"
-                                  ? P.gBg
-                                  : t.status === "rejected"
-                                  ? P.rBg
-                                  : P.aBg,
-                              color:
-                                t.status === "approved"
-                                  ? P.grn
-                                  : t.status === "rejected"
-                                  ? P.red
-                                  : P.amb
-                            }}
-                          >
-                            {t.status}
-                          </span>
+                        <div style={{ fontSize: 14, fontWeight: 600 }}>
+                          {t.from_project_name} → {t.to_project_name}
+                        </div>
+                        <div
+                          style={{ fontSize: 11, color: P.lt, fontFamily: Ft.m, marginTop: 2 }}
+                        >
+                          {fmtDateFull(t.trip_date)}
                         </div>
                       </div>
-                      {isA && t.status === "logged" && (
-                        <div style={{ display: "flex", gap: 8, marginTop: 10 }} className="no-print">
-                          <Btn
-                            small
-                            color={P.grn}
-                            onClick={() => approveTrip(t.id)}
-                            sx={{ flex: 1 }}
-                          >
-                            ✓ Approve
-                          </Btn>
-                          <Btn
-                            small
-                            color={P.red}
-                            onClick={() => rejectTrip(t.id)}
-                            sx={{ flex: 1 }}
-                          >
-                            ✕ Reject
-                          </Btn>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 16, fontWeight: 700, fontFamily: Ft.h }}>
+                          {Number(t.miles).toFixed(1)} mi
                         </div>
-                      )}
-                      {isA && (
-                        <div style={{ display: "flex", gap: 14, marginTop: 6 }} className="no-print">
-                          <button
-                            onClick={() => openEdit(t)}
-                            style={{
-                              fontSize: 11,
-                              color: P.mid,
-                              background: "none",
-                              border: "none",
-                              cursor: "pointer",
-                              fontFamily: Ft.m,
-                              padding: 0
-                            }}
-                          >
-                            ✏️ Edit
-                          </button>
-                          <button
-                            onClick={() => setDTM(t)}
-                            style={{
-                              fontSize: 11,
-                              color: P.lt,
-                              background: "none",
-                              border: "none",
-                              cursor: "pointer",
-                              fontFamily: Ft.m,
-                              padding: 0
-                            }}
-                          >
-                            Delete trip
-                          </button>
+                        <div style={{ fontSize: 12, color: P.grn, fontFamily: Ft.m }}>
+                          ${Number(t.reimbursement).toFixed(2)}
                         </div>
-                      )}
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontFamily: Ft.m,
+                            padding: "2px 6px",
+                            borderRadius: 4,
+                            background:
+                              t.status === "approved"
+                                ? P.gBg
+                                : t.status === "rejected"
+                                ? P.rBg
+                                : P.aBg,
+                            color:
+                              t.status === "approved"
+                                ? P.grn
+                                : t.status === "rejected"
+                                ? P.red
+                                : P.amb
+                          }}
+                        >
+                          {t.status}
+                        </span>
+                      </div>
                     </div>
+                    {isA && t.status === "logged" && (
+                      <div style={{ display: "flex", gap: 8, marginTop: 10 }} className="no-print">
+                        <Btn
+                          small
+                          color={P.grn}
+                          onClick={() => approveTrip(t.id)}
+                          sx={{ flex: 1 }}
+                        >
+                          ✓ Approve
+                        </Btn>
+                        <Btn
+                          small
+                          color={P.red}
+                          onClick={() => rejectTrip(t.id)}
+                          sx={{ flex: 1 }}
+                        >
+                          ✕ Reject
+                        </Btn>
+                      </div>
+                    )}
+                    {isA && (
+                      <button
+                        onClick={() => deleteTrip(t.id)}
+                        style={{
+                          fontSize: 11,
+                          color: P.lt,
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          marginTop: 6,
+                          fontFamily: Ft.m
+                        }}
+                        className="no-print"
+                      >
+                        Delete trip
+                      </button>
+                    )}
+                  </div>
                   );
-                  return userSep
-                    ? [
-                        <div
-                          key={`us-${t.id}`}
-                          style={{ borderTop: `2px solid ${P.red}`, margin: "16px 0" }}
-                        />,
-                        card
-                      ]
-                    : monthSep
-                    ? [
-                        <div
-                          key={`mb-${t.id}`}
-                          style={{ borderTop: `2px solid ${P.blk}`, margin: "20px 0 0" }}
-                        />,
-                        <div
-                          key={`mr-${t.id}`}
-                          style={{ borderTop: `2px solid ${P.red}`, margin: "0 0 16px" }}
-                        />,
-                        card
-                      ]
-                    : [card];
-                })}
+                  if (reportUser === "all") {
+                    const groups = reportTrips.reduce((acc, t) => {
+                      if (!acc[t.user_id]) acc[t.user_id] = { name: t.user_name, trips: [] };
+                      acc[t.user_id].trips.push(t);
+                      return acc;
+                    }, {});
+                    return Object.entries(groups).sort((a, b) => a[1].name.localeCompare(b[1].name)).map(([uid, g]) => {
+                      const uM = g.trips.reduce((s, t) => s + Number(t.miles), 0);
+                      const uR = g.trips.reduce((s, t) => s + Number(t.reimbursement || 0), 0);
+                      return (
+                        <div key={uid}>
+                          {g.trips.map(renderTrip)}
+                          <div style={{
+                            padding: "14px 18px",
+                            background: P.tBg,
+                            borderRadius: 12,
+                            border: `2px solid ${P.tan}`,
+                            marginBottom: 24,
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center"
+                          }}>
+                            <div>
+                              <div style={{ fontSize: 10, color: P.mid, fontFamily: Ft.m, textTransform: "uppercase", letterSpacing: 0.5 }}>Total for</div>
+                              <div style={{ fontSize: 17, fontWeight: 700, color: P.red, fontFamily: Ft.h }}>{g.name}</div>
+                            </div>
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ fontSize: 22, fontWeight: 700, fontFamily: Ft.h }}>{uM.toFixed(1)} mi</div>
+                              <div style={{ fontSize: 12, color: P.grn, fontFamily: Ft.m }}>${uR.toFixed(2)} · {g.trips.length} trips</div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    });
+                  }
+                  return reportTrips.slice(0, 100).map(renderTrip);
+                })()}
                 {reportTrips.length === 0 && (
                   <div
                     style={{
@@ -2163,12 +2045,85 @@ export default function App() {
                   </div>
                 )}
               </>
+            )}
           </div>
         )}
 
         {tab === "admin" && isA && (
           <div style={{ animation: "fadeIn .3s ease" }}>
-            {adPg === "hub" && (
+            {!adAuth && (
+              <div style={{ maxWidth: 340, margin: "40px auto", textAlign: "center" }}>
+                <h2
+                  style={{
+                    fontFamily: Ft.h,
+                    fontSize: 20,
+                    fontWeight: 700,
+                    marginBottom: 20
+                  }}
+                >
+                  Admin Access
+                </h2>
+                <Fl label="Name">
+                  <input
+                    style={iS}
+                    value={aaName}
+                    onChange={e => setAAN(e.target.value)}
+                  />
+                </Fl>
+                <Fl label="PIN">
+                  <input
+                    style={{
+                      ...iS,
+                      textAlign: "center",
+                      fontSize: 24,
+                      letterSpacing: 12,
+                      fontFamily: Ft.m
+                    }}
+                    maxLength={4}
+                    value={aaPin}
+                    onChange={e => setAAP(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    placeholder="----"
+                    onKeyDown={e => {
+                      if (e.key === "Enter") {
+                        if (
+                          aaName.toLowerCase() === user.name.toLowerCase() &&
+                          aaPin === user.pin
+                        )
+                          setAdAuth(true);
+                        else setAAE("Invalid.");
+                      }
+                    }}
+                  />
+                </Fl>
+                {aaErr && (
+                  <div
+                    style={{
+                      color: P.red,
+                      fontSize: 13,
+                      marginBottom: 12,
+                      fontFamily: Ft.m
+                    }}
+                  >
+                    {aaErr}
+                  </div>
+                )}
+                <Btn
+                  full
+                  onClick={() => {
+                    if (
+                      aaName.toLowerCase() === user.name.toLowerCase() &&
+                      aaPin === user.pin
+                    )
+                      setAdAuth(true);
+                    else setAAE("Invalid.");
+                  }}
+                >
+                  Unlock
+                </Btn>
+              </div>
+            )}
+
+            {adAuth && adPg === "hub" && (
               <div>
                 <h2
                   style={{
@@ -2192,17 +2147,11 @@ export default function App() {
                     l: "Settings",
                     d: "IRS rate & pay periods",
                     c: P.tan
-                  },
-                  {
-                    k: "share",
-                    l: "Share App",
-                    d: "Send app link via SMS",
-                    c: P.blk
                   }
                 ].map(p => (
                   <button
                     key={p.k}
-                    onClick={() => p.k === "share" ? setShareMod(true) : setAdPg(p.k)}
+                    onClick={() => setAdPg(p.k)}
                     style={{
                       display: "block",
                       width: "100%",
@@ -2224,7 +2173,7 @@ export default function App() {
               </div>
             )}
 
-            {adPg === "employees" && (
+            {adAuth && adPg === "employees" && (
               <div>
                 <button
                   onClick={() => setAdPg("hub")}
@@ -2379,7 +2328,7 @@ export default function App() {
               </div>
             )}
 
-            {adPg === "settings" && (
+            {adAuth && adPg === "settings" && (
               <div>
                 <button
                   onClick={() => setAdPg("hub")}
@@ -2562,54 +2511,6 @@ export default function App() {
         </Btn>
       </Modal>
 
-      <Modal open={editMod} onClose={() => setEditMod(false)} title="Edit Trip">
-        <Fl label="From">
-          <select
-            style={{ ...iS, appearance: "none" }}
-            value={edFr}
-            onChange={e => setEdFr(e.target.value)}
-          >
-            <option value="">Select starting project...</option>
-            {projs.filter(p => p.address).map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </Fl>
-        <Fl label="To">
-          <select
-            style={{ ...iS, appearance: "none" }}
-            value={edTo}
-            onChange={e => setEdTo(e.target.value)}
-          >
-            <option value="">Select destination project...</option>
-            {projs.filter(p => p.address && p.id !== edFr).map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </Fl>
-        {isA && (
-          <Fl label="Trip Date (Admin Only)">
-            <input
-              style={iS}
-              type="date"
-              value={edDt}
-              onChange={e => setEdDt(e.target.value)}
-            />
-          </Fl>
-        )}
-        <Fl label="Note">
-          <input
-            style={iS}
-            value={edNt}
-            onChange={e => setEdNt(e.target.value)}
-            placeholder="optional"
-          />
-        </Fl>
-        <Btn full disabled={!edFr || !edTo || calculating} onClick={saveEdit}>
-          {calculating ? "Recalculating..." : "Save Changes"}
-        </Btn>
-      </Modal>
-
       <Modal open={!!editUser} onClose={() => setEU(null)} title="Edit Employee">
         <Fl label="Name">
           <input style={iS} value={euN} onChange={e => setEUN(e.target.value)} />
@@ -2643,38 +2544,6 @@ export default function App() {
         >
           Save
         </Btn>
-      </Modal>
-
-      <Modal
-        open={!!delTripMod}
-        onClose={() => setDTM(null)}
-        title="Delete Trip?"
-      >
-        <p style={{ color: P.mid, marginBottom: 20 }}>
-          Permanently delete{" "}
-          <strong>{delTripMod?.from_project_name} → {delTripMod?.to_project_name}</strong>
-          {" "}({Number(delTripMod?.miles || 0).toFixed(1)} mi) on {delTripMod && fmtDateFull(delTripMod.trip_date)}? This cannot be undone.
-        </p>
-        <div style={{ display: "flex", gap: 10 }}>
-          <button
-            onClick={() => setDTM(null)}
-            style={{
-              flex: 1,
-              padding: 12,
-              borderRadius: 10,
-              border: `1.5px solid ${P.bdr}`,
-              background: "#fff",
-              color: P.mid,
-              fontWeight: 600,
-              cursor: "pointer"
-            }}
-          >
-            Cancel
-          </button>
-          <Btn full color={P.red} onClick={async () => { await deleteTrip(delTripMod.id); setDTM(null); }} sx={{ flex: 1 }}>
-            Delete
-          </Btn>
-        </div>
       </Modal>
 
       <Modal
@@ -2731,31 +2600,21 @@ export default function App() {
         </Btn>
       </Modal>
 
-      <Modal open={shareMod} onClose={() => setShareMod(false)} title="Share App">
-        <div style={{ fontSize: 13, color: P.mid, marginBottom: 12, fontFamily: Ft.m }}>
-          Enter phone numbers (one per line, or comma-separated):
-        </div>
-        <Fl label="Phone Numbers">
-          <textarea
-            style={{ ...iS, minHeight: 110, fontFamily: Ft.m, resize: "vertical" }}
-            value={sharePhones}
-            onChange={e => setSharePhones(e.target.value)}
-            placeholder={"555-123-4567\n555-987-6543"}
-          />
-        </Fl>
-        <div style={{ fontSize: 12, color: P.lt, marginBottom: 16, fontFamily: Ft.m }}>
-          Opens your messages app with the app link prefilled. Numbers must be 10+ digits.
-        </div>
-        <Btn full disabled={!sharePhones.trim()} onClick={shareApp}>
-          Send via SMS
-        </Btn>
-      </Modal>
-
       <Nav
         tab={tab}
         set={t => {
           setTab(t);
-          if (t !== "admin") setAdPg("hub");
+          if (t !== "admin") {
+            setAdPg("hub");
+            setAdAuth(false);
+            setAAN("");
+            setAAP("");
+          }
+          if (t !== "reports") {
+            setRptAuth(false);
+            setRAN("");
+            setRAP("");
+          }
         }}
         admin={isA}
       />
