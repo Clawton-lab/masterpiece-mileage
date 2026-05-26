@@ -1807,7 +1807,7 @@ export default function App() {
                       </optgroup>
                       <optgroup label="Projects">
                         <option value="all_projects">All Projects</option>
-                        {[...projects]
+                        {[...projs]
                           .filter(p => p.active !== false)
                           .sort((a, b) => a.name.localeCompare(b.name))
                           .map(p => (
