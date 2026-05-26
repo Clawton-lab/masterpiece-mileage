@@ -488,7 +488,6 @@ export default function App() {
   const [nPA, setNPA] = useState("");
   const [reportUser, setReportUser] = useState("all");
   const [reportPeriod, setReportPeriod] = useState("current");
-  const [reportView, setReportView] = useState("employee");
   const [settingsRate, setSettingsRate] = useState("");
   const [settingsAnchor, setSettingsAnchor] = useState("");
   const [settingsFreq, setSettingsFreq] = useState("biweekly");
@@ -855,7 +854,10 @@ export default function App() {
   console.log("Current user:", user?.name, "Role:", user?.role, "ID:", user?.id);
   
   const reportTrips = trips.filter(t => {
-    const userMatch = reportUser === "all" || t.user_id === reportUser;
+    let userMatch = true;
+    if (reportUser === "all" || reportUser === "all_projects") userMatch = true;
+    else if (reportUser.startsWith("proj_")) userMatch = t.to_project_id === reportUser.slice(5);
+    else userMatch = t.user_id === reportUser;
     let periodMatch = true;
     
     if (reportPeriod === "current") {
@@ -1793,14 +1795,27 @@ export default function App() {
                       onChange={e => setReportUser(e.target.value)}
                       style={{ ...iS, width: "auto", flex: 1 }}
                     >
-                      <option value="all">All Employees</option>
-                      {users
-                        .filter(u => u.active)
-                        .map(u => (
-                          <option key={u.id} value={u.id}>
-                            {u.name}
-                          </option>
-                        ))}
+                      <optgroup label="Employees">
+                        <option value="all">All Employees</option>
+                        {users
+                          .filter(u => u.active)
+                          .map(u => (
+                            <option key={u.id} value={u.id}>
+                              {u.name}
+                            </option>
+                          ))}
+                      </optgroup>
+                      <optgroup label="Projects">
+                        <option value="all_projects">All Projects</option>
+                        {[...projects]
+                          .filter(p => p.active !== false)
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map(p => (
+                            <option key={p.id} value={`proj_${p.id}`}>
+                              {p.name}
+                            </option>
+                          ))}
+                      </optgroup>
                     </select>
                   )}
                   <select
@@ -1812,14 +1827,6 @@ export default function App() {
                     <option value="monthly">Monthly Mileage</option>
                     <option value="ytd">Year to Date</option>
                     <option value="all">All Time</option>
-                  </select>
-                  <select
-                    value={reportView}
-                    onChange={e => setReportView(e.target.value)}
-                    style={{ ...iS, width: "auto", flex: 1 }}
-                  >
-                    <option value="employee">By Employee</option>
-                    <option value="project">By Project</option>
                   </select>
                 </div>
                 <div
@@ -2002,7 +2009,7 @@ export default function App() {
                     )}
                   </div>
                   );
-                  if (reportView === "project") {
+                  if (reportUser === "all_projects") {
                     const groups = reportTrips.reduce((acc, t) => {
                       const key = t.to_project_id || t.to_project_name;
                       if (!acc[key]) acc[key] = { name: t.to_project_name, trips: [] };
@@ -2013,26 +2020,23 @@ export default function App() {
                       const pM = g.trips.reduce((s, t) => s + Number(t.miles), 0);
                       const pR = g.trips.reduce((s, t) => s + Number(t.reimbursement || 0), 0);
                       return (
-                        <div key={pid}>
-                          {g.trips.map(renderTrip)}
-                          <div style={{
-                            padding: "14px 18px",
-                            background: P.tBg,
-                            borderRadius: 12,
-                            border: `2px solid ${P.tan}`,
-                            marginBottom: 24,
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center"
-                          }}>
-                            <div>
-                              <div style={{ fontSize: 10, color: P.mid, fontFamily: Ft.m, textTransform: "uppercase", letterSpacing: 0.5 }}>Project Total</div>
-                              <div style={{ fontSize: 17, fontWeight: 700, color: P.red, fontFamily: Ft.h }}>{g.name}</div>
-                            </div>
-                            <div style={{ textAlign: "right" }}>
-                              <div style={{ fontSize: 22, fontWeight: 700, fontFamily: Ft.h }}>{pM.toFixed(1)} mi</div>
-                              <div style={{ fontSize: 12, color: P.grn, fontFamily: Ft.m }}>${pR.toFixed(2)} · {g.trips.length} trips</div>
-                            </div>
+                        <div key={pid} style={{
+                          padding: "14px 18px",
+                          background: P.tBg,
+                          borderRadius: 12,
+                          border: `2px solid ${P.tan}`,
+                          marginBottom: 10,
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center"
+                        }}>
+                          <div>
+                            <div style={{ fontSize: 10, color: P.mid, fontFamily: Ft.m, textTransform: "uppercase", letterSpacing: 0.5 }}>Project</div>
+                            <div style={{ fontSize: 17, fontWeight: 700, color: P.red, fontFamily: Ft.h }}>{g.name}</div>
+                          </div>
+                          <div style={{ textAlign: "right" }}>
+                            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: Ft.h }}>{pM.toFixed(1)} mi</div>
+                            <div style={{ fontSize: 12, color: P.grn, fontFamily: Ft.m }}>${pR.toFixed(2)} · {g.trips.length} trips</div>
                           </div>
                         </div>
                       );
