@@ -58,14 +58,20 @@ async function geocode(address) {
   return null;
 }
 
-async function getDrivingMiles(from, to) {
+async function getDrivingMiles(fromProj, toProj) {
   try {
-    const a = await geocode(from);
-    if (!a) throw new Error(`Could not geocode: ${from}`);
-    await new Promise(r => setTimeout(r, 300));
-    const b = await geocode(to);
-    if (!b) throw new Error(`Could not geocode: ${to}`);
-    await new Promise(r => setTimeout(r, 300));
+    let a = (fromProj.lat != null && fromProj.lng != null) ? { lat: Number(fromProj.lat), lng: Number(fromProj.lng) } : null;
+    if (!a) {
+      a = await geocode(fromProj.address);
+      if (!a) throw new Error(`Could not geocode: ${fromProj.address}`);
+      await new Promise(r => setTimeout(r, 300));
+    }
+    let b = (toProj.lat != null && toProj.lng != null) ? { lat: Number(toProj.lat), lng: Number(toProj.lng) } : null;
+    if (!b) {
+      b = await geocode(toProj.address);
+      if (!b) throw new Error(`Could not geocode: ${toProj.address}`);
+      await new Promise(r => setTimeout(r, 300));
+    }
     const r = await fetch(
       `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=false`
     );
@@ -622,7 +628,7 @@ export default function App() {
     }
     setCalc(true);
     try {
-      let miles = await getDrivingMiles(fromP.address, toP.address);
+      let miles = await getDrivingMiles(fromP, toP);
       if (!miles) {
         setCalc(false);
         setManualMod(true);
