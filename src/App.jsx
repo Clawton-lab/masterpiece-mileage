@@ -86,39 +86,42 @@ async function getDrivingMiles(fromProj, toProj) {
   }
 }
 
-function getPayPeriod(date, anchor, freq = "biweekly", time = "12:00") {
-  const [hours, minutes] = time.split(':').map(Number);
-  
-  const now = new Date();
-  const currentDateTime = new Date(date + 'T00:00:00');
-  currentDateTime.setHours(now.getHours(), now.getMinutes(), 0, 0);
-  
-  const anchorDateTime = new Date(anchor + 'T' + time + ':00');
-  
-  let periodDays;
-  if (freq === "weekly") periodDays = 7;
-  else if (freq === "monthly") periodDays = 30;
-  else periodDays = 14;
-  
+function getPayPeriod(date, anchor, freq = "biweekly", time = "12:00", tz = "America/Denver") {
+  const periodDays = freq === "weekly" ? 7 : freq === "monthly" ? 30 : 14;
   const msPerPeriod = periodDays * 24 * 60 * 60 * 1000;
-  const timeDiff = currentDateTime.getTime() - anchorDateTime.getTime();
-  const periodsSinceAnchor = Math.floor(timeDiff / msPerPeriod);
-  
-  const periodStartTime = new Date(anchorDateTime.getTime() + (periodsSinceAnchor * msPerPeriod));
-  const periodEndTime = new Date(periodStartTime.getTime() + msPerPeriod);
-  periodEndTime.setDate(periodEndTime.getDate() - 1);
-  
-  const formatDate = (d) => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
+
+  const tzOffset = (d) => {
+    const dtf = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+    const p = Object.fromEntries(dtf.formatToParts(d).map(x => [x.type, x.value]));
+    return Date.UTC(+p.year, +p.month - 1, +p.day,
+      (+p.hour === 24 ? 0 : +p.hour), +p.minute, +p.second) - d.getTime();
   };
-  
-  return {
-    start: formatDate(periodStartTime),
-    end: formatDate(periodEndTime)
+  const tzToUtc = (dStr, tStr) => {
+    const g = new Date(`${dStr}T${tStr}:00Z`);
+    return g.getTime() - tzOffset(g);
   };
+  const dateInTz = (ms) => {
+    const p = Object.fromEntries(
+      new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit'
+      }).formatToParts(new Date(ms)).map(x => [x.type, x.value])
+    );
+    return `${p.year}-${p.month}-${p.day}`;
+  };
+
+  const anchorMs = tzToUtc(anchor, time);
+  const todayTz = dateInTz(Date.now());
+  const refMs = date === todayTz ? Date.now() : tzToUtc(date, '12:00');
+
+  const periods = Math.floor((refMs - anchorMs) / msPerPeriod);
+  const startMs = anchorMs + periods * msPerPeriod;
+  const endMs = startMs + msPerPeriod - 24 * 60 * 60 * 1000;
+
+  return { start: dateInTz(startMs), end: dateInTz(endMs) };
 }
 
 function fmtDate(d) {
@@ -480,7 +483,8 @@ export default function App() {
     irs_rate: 0.70,
     pay_period_anchor: "2026-01-07",
     pay_period_frequency: "biweekly",
-    pay_period_time: "12:00"
+    pay_period_time: "12:00",
+    pay_period_timezone: "America/Denver"
   });
   const [users, setUsr] = useState([]);
   const [tab, setTab] = useState("log");
@@ -498,6 +502,7 @@ export default function App() {
   const [settingsAnchor, setSettingsAnchor] = useState("");
   const [settingsFreq, setSettingsFreq] = useState("biweekly");
   const [settingsTime, setSettingsTime] = useState("12:00");
+  const [settingsTz, setSettingsTz] = useState("America/Denver");
   const [toast, setToast] = useState({ m: "", s: false });
   const [loaded, setLoaded] = useState(false);
   const [adPg, setAdPg] = useState("hub");
@@ -544,6 +549,7 @@ export default function App() {
         setSettingsAnchor(s[0].pay_period_anchor);
         setSettingsFreq(s[0].pay_period_frequency || "biweekly");
         setSettingsTime(s[0].pay_period_time || "12:00");
+        setSettingsTz(s[0].pay_period_timezone || "America/Denver");
       }
     } catch (e) {
       console.error(e);
@@ -735,6 +741,7 @@ export default function App() {
           pay_period_anchor: settingsAnchor,
           pay_period_frequency: settingsFreq,
           pay_period_time: settingsTime,
+          pay_period_timezone: settingsTz,
           updated_at: new Date().toISOString()
         })
       });
@@ -841,7 +848,7 @@ export default function App() {
   };
 
   const myTrips = trips.filter(t => t.user_id === user?.id);
-  const pp = getPayPeriod(today(), settings.pay_period_anchor, settings.pay_period_frequency, settings.pay_period_time);
+  const pp = getPayPeriod(today(), settings.pay_period_anchor, settings.pay_period_frequency, settings.pay_period_time, settings.pay_period_timezone);
   const todayTrips = myTrips.filter(t => t.trip_date === today());
   const ppTrips = myTrips.filter(
     t => t.trip_date >= pp.start && t.trip_date <= pp.end
@@ -2477,14 +2484,34 @@ export default function App() {
                       value={settingsAnchor}
                       onChange={e => setSettingsAnchor(e.target.value)}
                     />
+                    {settingsAnchor && (
+                      <div style={{ fontSize: 11, color: P.mid, fontFamily: Ft.m, marginTop: 4 }}>
+                        Day of week: <strong style={{ color: P.red }}>{new Date(settingsAnchor + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' })}</strong>
+                      </div>
+                    )}
                   </Fl>
-                  <Fl label="Pay Period Start Time (Mountain Time)">
+                  <Fl label="Pay Period Cutoff Time">
                     <input
                       style={iS}
                       type="time"
                       value={settingsTime}
                       onChange={e => setSettingsTime(e.target.value)}
                     />
+                  </Fl>
+                  <Fl label="Timezone">
+                    <select
+                      style={iS}
+                      value={settingsTz}
+                      onChange={e => setSettingsTz(e.target.value)}
+                    >
+                      <option value="America/Denver">Mountain (Denver)</option>
+                      <option value="America/Los_Angeles">Pacific (Los Angeles)</option>
+                      <option value="America/Phoenix">Arizona (Phoenix, no DST)</option>
+                      <option value="America/Chicago">Central (Chicago)</option>
+                      <option value="America/New_York">Eastern (New York)</option>
+                      <option value="America/Anchorage">Alaska (Anchorage)</option>
+                      <option value="Pacific/Honolulu">Hawaii (Honolulu)</option>
+                    </select>
                   </Fl>
                   <div
                     style={{
@@ -2494,8 +2521,9 @@ export default function App() {
                       marginBottom: 12
                     }}
                   >
-                    Set when pay periods start. Default is 12:00 PM MT on the anchor date. 
-                    The app calculates all periods from this date/time based on your selected frequency.
+                    Pay periods cycle every {settingsFreq === "weekly" ? "7" : settingsFreq === "monthly" ? "30" : "14"} days starting from the anchor date.
+                    Trips logged after the cutoff time on the rollover day roll into the next period.
+                    Example: bi-weekly with anchor Tuesday 5:00 PM Mountain — every other Tuesday at 5:00 PM MT the period flips.
                   </div>
                 </div>
                 <Btn full onClick={saveSettings}>
