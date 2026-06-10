@@ -982,6 +982,14 @@ export default function App() {
     (s, t) => s + Number(t.reimbursement),
     0
   );
+  const userTotals = reportTrips.reduce((acc, t) => {
+    const k = t.user_name || "Unknown";
+    if (!acc[k]) acc[k] = { miles: 0, reimb: 0, count: 0 };
+    acc[k].miles += Number(t.miles);
+    acc[k].reimb += Number(t.reimbursement);
+    acc[k].count++;
+    return acc;
+  }, {});
 
   const exportCSV = () => {
     const rows = [
@@ -2154,13 +2162,45 @@ export default function App() {
                       )}
                     </div>
                   );
+                  const next = arr[i + 1];
+                  const endOfUser = !next || next.user_name !== t.user_name;
+                  const ut = userTotals[t.user_name];
+                  const totalBox = endOfUser && ut ? (
+                    <div
+                      key={`tot-${t.id}`}
+                      style={{
+                        marginTop: 6,
+                        marginBottom: 12,
+                        padding: "10px 14px",
+                        background: P.tBg,
+                        border: `2px solid ${P.tan}`,
+                        borderRadius: 12,
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center"
+                      }}
+                    >
+                      <div style={{ fontSize: 13, fontWeight: 700, fontFamily: Ft.m, color: P.txt, textTransform: "uppercase", letterSpacing: 1 }}>
+                        {t.user_name} Total ({ut.count} trip{ut.count === 1 ? "" : "s"})
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 16, fontWeight: 700, fontFamily: Ft.h }}>
+                          {ut.miles.toFixed(1)} mi
+                        </div>
+                        <div style={{ fontSize: 13, color: P.grn, fontFamily: Ft.m, fontWeight: 700 }}>
+                          ${ut.reimb.toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null;
+                  const tail = totalBox ? [card, totalBox] : [card];
                   return userSep
                     ? [
                         <div
                           key={`us-${t.id}`}
                           style={{ borderTop: `2px solid ${P.red}`, margin: "16px 0" }}
                         />,
-                        card
+                        ...tail
                       ]
                     : monthSep
                     ? [
@@ -2172,9 +2212,9 @@ export default function App() {
                           key={`mr-${t.id}`}
                           style={{ borderTop: `2px solid ${P.red}`, margin: "0 0 16px" }}
                         />,
-                        card
+                        ...tail
                       ]
-                    : [card];
+                    : tail;
                 })}
                 {reportTrips.length === 0 && (
                   <div
