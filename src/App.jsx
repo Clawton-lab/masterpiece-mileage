@@ -411,6 +411,7 @@ function Toast({ m, s }) {
 function Nav({ tab, set, admin }) {
   const ts = [
     { k: "log", l: "Log Trip" },
+    { k: "receipts", l: "Receipts" },
     { k: "trips", l: "My Trips" },
     { k: "projects", l: "Projects" }
   ];
@@ -443,7 +444,7 @@ function Nav({ tab, set, admin }) {
             flexDirection: "column",
             alignItems: "center",
             gap: 2,
-            padding: "4px 8px",
+            padding: "4px 5px",
             background: "none",
             border: "none",
             cursor: "pointer",
@@ -451,9 +452,10 @@ function Nav({ tab, set, admin }) {
             borderTop:
               tab === t.k ? `2px solid ${P.red}` : "2px solid transparent",
             marginTop: -2,
-            fontSize: 11,
+            fontSize: 10,
             fontWeight: 700,
-            fontFamily: Ft.m
+            fontFamily: Ft.m,
+            whiteSpace: "nowrap"
           }}
         >
           {t.l}
@@ -519,6 +521,18 @@ export default function App() {
   const [edNt, setEdNt] = useState("");
   const [shareMod, setShareMod] = useState(false);
   const [sharePhones, setSharePhones] = useState("");
+  const [logForUser, setLogForUser] = useState("");
+  const [receipts, setReceipts] = useState([]);
+  const [rcMod, setRcMod] = useState(false);
+  const [rcAmt, setRcAmt] = useState("");
+  const [rcDate, setRcDate] = useState(today());
+  const [rcNote, setRcNote] = useState("");
+  const [rcFile, setRcFile] = useState(null);
+  const [rcPreview, setRcPreview] = useState("");
+  const [rcUp, setRcUp] = useState(false);
+  const [rcForUser, setRcForUser] = useState("");
+  const [editRc, setEditRc] = useState(null);
+  const [delRcMod, setDelRcMod] = useState(null);
 
   const show = useCallback(m => {
     setToast({ m, s: true });
@@ -530,15 +544,17 @@ export default function App() {
 
   const load = useCallback(async () => {
     try {
-      const [p, t, s, u] = await Promise.all([
+      const [p, t, s, u, r] = await Promise.all([
         api("projects?order=name"),
         api("trips?order=created_at.desc"),
         api("mileage_settings?limit=1"),
-        api("yard_users?order=name")
+        api("yard_users?order=name"),
+        api("receipts?order=receipt_date.desc")
       ]);
       setProjs(p);
       setTrips(t.map(x => ({ ...x, trip_date: typeof x.trip_date === "string" ? x.trip_date.slice(0, 10) : x.trip_date })));
       setUsr(u);
+      setReceipts(r.map(x => ({ ...x, receipt_date: typeof x.receipt_date === "string" ? x.receipt_date.slice(0, 10) : x.receipt_date })));
       if (s && s.length > 0) {
         setSettings(s[0]);
         setSettingsRate(s[0].irs_rate.toString());
@@ -627,6 +643,7 @@ export default function App() {
       show("Both projects need addresses");
       return;
     }
+    const tgt = (isA && logForUser) ? users.find(u => u.id === logForUser) : user;
     setCalc(true);
     try {
       let miles = await getDrivingMiles(fromP.address, toP.address);
@@ -639,8 +656,8 @@ export default function App() {
       await api("trips", {
         method: "POST",
         body: JSON.stringify({
-          user_id: user.id,
-          user_name: user.name,
+          user_id: tgt.id,
+          user_name: tgt.name,
           from_project_id: fromP.id,
           from_project_name: fromP.name,
           from_address: fromP.address,
@@ -650,7 +667,7 @@ export default function App() {
           miles,
           reimbursement: reimb,
           irs_rate: settings.irs_rate,
-          note: tripNote,
+          note: (isA && logForUser && logForUser !== user.id) ? `${tripNote ? tripNote + " " : ""}(logged by ${user.name})`.trim() : tripNote,
           trip_date: tripDate
         })
       });
@@ -659,7 +676,7 @@ export default function App() {
       setToId("");
       setTripNote("");
       setTripDate(today());
-      show(`${miles} mi logged — $${reimb.toFixed(2)}`);
+      show(`${miles} mi logged for ${tgt.name} — $${reimb.toFixed(2)}`);
     } catch (e) {
       show("Error logging trip");
     }
@@ -674,13 +691,14 @@ export default function App() {
     }
     const fromP = projs.find(p => p.id === fromId);
     const toP = projs.find(p => p.id === toId);
+    const tgt = (isA && logForUser) ? users.find(u => u.id === logForUser) : user;
     const reimb = Math.round(miles * settings.irs_rate * 100) / 100;
     try {
       await api("trips", {
         method: "POST",
         body: JSON.stringify({
-          user_id: user.id,
-          user_name: user.name,
+          user_id: tgt.id,
+          user_name: tgt.name,
           from_project_id: fromP.id,
           from_project_name: fromP.name,
           from_address: fromP.address,
@@ -690,7 +708,7 @@ export default function App() {
           miles,
           reimbursement: reimb,
           irs_rate: settings.irs_rate,
-          note: tripNote,
+          note: (isA && logForUser && logForUser !== user.id) ? `${tripNote ? tripNote + " " : ""}(logged by ${user.name})`.trim() : tripNote,
           trip_date: tripDate
         })
       });
@@ -701,9 +719,110 @@ export default function App() {
       setTripDate(today());
       setManualMod(false);
       setManualMiles("");
-      show(`${miles} mi logged — $${reimb.toFixed(2)}`);
+      show(`${miles} mi logged for ${tgt.name} — $${reimb.toFixed(2)}`);
     } catch (e) {
       show("Error saving trip");
+    }
+  };
+
+  const compressImg = file => new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const max = 1200;
+        let { width: w, height: h } = img;
+        if (w > max || h > max) {
+          if (w > h) { h = Math.round(h * max / w); w = max; }
+          else { w = Math.round(w * max / h); h = max; }
+        }
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        c.getContext("2d").drawImage(img, 0, 0, w, h);
+        c.toBlob(b => b ? resolve(b) : reject(new Error("compress failed")), "image/jpeg", 0.8);
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+
+  const pickReceiptFile = f => {
+    if (!f) return;
+    setRcFile(f);
+    setRcPreview(URL.createObjectURL(f));
+  };
+
+  const saveReceipt = async () => {
+    const amt = parseFloat(rcAmt);
+    if (!amt || amt <= 0) {
+      show("Enter a valid amount");
+      return;
+    }
+    const tgt = (isA && rcForUser) ? users.find(u => u.id === rcForUser) : user;
+    setRcUp(true);
+    try {
+      let imageUrl = editRc ? editRc.image_url : null;
+      if (rcFile) {
+        const blob = await compressImg(rcFile);
+        const path = `${tgt.id}/${Date.now()}.jpg`;
+        const up = await fetch(`${SB}/storage/v1/object/receipts/${path}`, {
+          method: "POST",
+          headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, "Content-Type": "image/jpeg" },
+          body: blob
+        });
+        if (!up.ok) throw new Error("upload failed");
+        imageUrl = `${SB}/storage/v1/object/public/receipts/${path}`;
+      }
+      const body = {
+        user_id: tgt.id,
+        user_name: tgt.name,
+        receipt_date: rcDate,
+        amount: amt,
+        image_url: imageUrl,
+        note: (isA && rcForUser && rcForUser !== user.id) ? `${rcNote ? rcNote + " " : ""}(logged by ${user.name})`.trim() : rcNote
+      };
+      if (editRc) {
+        await api(`receipts?id=eq.${editRc.id}`, { method: "PATCH", body: JSON.stringify(body) });
+      } else {
+        await api("receipts", { method: "POST", body: JSON.stringify(body) });
+      }
+      await load();
+      setRcMod(false);
+      setRcAmt("");
+      setRcDate(today());
+      setRcNote("");
+      setRcFile(null);
+      setRcPreview("");
+      setRcForUser("");
+      setEditRc(null);
+      show(editRc ? "Receipt updated" : `Receipt saved for ${tgt.name}`);
+    } catch (e) {
+      show("Error saving receipt");
+    }
+    setRcUp(false);
+  };
+
+  const openEditReceipt = r => {
+    setEditRc(r);
+    setRcAmt(String(r.amount));
+    setRcDate(r.receipt_date);
+    setRcNote(r.note || "");
+    setRcForUser(isA ? r.user_id : "");
+    setRcFile(null);
+    setRcPreview(r.image_url || "");
+    setRcMod(true);
+  };
+
+  const deleteReceipt = async id => {
+    try {
+      await api(`receipts?id=eq.${id}`, { method: "DELETE" });
+      await load();
+      setDelRcMod(null);
+      show("Receipt deleted");
+    } catch (e) {
+      show("Error");
     }
   };
 
@@ -991,6 +1110,30 @@ export default function App() {
     return acc;
   }, {});
 
+  const inReportPeriod = d => {
+    if (reportPeriod === "current") return d >= selPP.start && d <= selPP.end;
+    if (reportPeriod === "monthly") {
+      const [my, mm] = reportMonth.split("-").map(Number);
+      const ms = `${reportMonth}-01`;
+      const me = `${reportMonth}-${String(new Date(my, mm, 0).getDate()).padStart(2, "0")}`;
+      return d >= ms && d <= me;
+    }
+    if (reportPeriod === "ytd") return d >= `${thisYear()}-01-01`;
+    return true;
+  };
+  const reportReceipts = receipts.filter(r => {
+    const userMatch = reportUser === "all" || r.user_id === reportUser;
+    return userMatch && inReportPeriod(r.receipt_date);
+  });
+  const userReceiptTotals = reportReceipts.reduce((acc, r) => {
+    const k = r.user_name || "Unknown";
+    if (!acc[k]) acc[k] = { amount: 0, count: 0 };
+    acc[k].amount += Number(r.amount);
+    acc[k].count++;
+    return acc;
+  }, {});
+  const myReceipts = receipts.filter(r => r.user_id === user?.id);
+
   const exportCSV = () => {
     const rows = [
       [
@@ -1016,6 +1159,23 @@ export default function App() {
         t.status
       ])
     );
+    if (!showRejected && reportReceipts.length > 0) {
+      rows.push([]);
+      rows.push(["RECEIPTS"]);
+      rows.push(["Date", "Employee", "Note", "", "", "", "Amount", ""]);
+      reportReceipts.forEach(r =>
+        rows.push([
+          r.receipt_date,
+          r.user_name,
+          (r.note || "").replace(/,/g, ";"),
+          "",
+          "",
+          "",
+          `$${Number(r.amount).toFixed(2)}`,
+          ""
+        ])
+      );
+    }
     const csv = rows.map(r => r.join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
@@ -1349,6 +1509,20 @@ export default function App() {
             >
               Log Trip
             </h2>
+            {isA && (
+              <Fl label="Logging Trip For">
+                <select
+                  style={{ ...iS, appearance: "none" }}
+                  value={logForUser || user.id}
+                  onChange={e => setLogForUser(e.target.value === user.id ? "" : e.target.value)}
+                >
+                  <option value={user.id}>{user.name} (me)</option>
+                  {users.filter(u => u.active && u.id !== user.id).map(u => (
+                    <option key={u.id} value={u.id}>{u.name}</option>
+                  ))}
+                </select>
+              </Fl>
+            )}
             <div
               style={{
                 display: "grid",
@@ -1625,6 +1799,73 @@ export default function App() {
                 })}
               </>
             )}
+          </div>
+        )}
+
+        {tab === "receipts" && (
+          <div style={{ animation: "fadeIn .3s ease" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "0 0 16px" }}>
+              <h2 style={{ fontFamily: Ft.h, fontSize: 20, fontWeight: 700, margin: 0 }}>
+                Receipts
+              </h2>
+              <Btn small onClick={() => { setEditRc(null); setRcAmt(""); setRcDate(today()); setRcNote(""); setRcFile(null); setRcPreview(""); setRcForUser(""); setRcMod(true); }}>
+                + Add Receipt
+              </Btn>
+            </div>
+            {myReceipts.length === 0 && (
+              <div style={{ padding: 40, textAlign: "center", color: P.lt, fontFamily: Ft.m }}>
+                No receipts yet
+              </div>
+            )}
+            {myReceipts.map(r => (
+              <div
+                key={r.id}
+                style={{
+                  padding: "12px 14px",
+                  background: "#fff",
+                  borderRadius: 12,
+                  border: `1px solid ${P.bdr}`,
+                  marginBottom: 8,
+                  display: "flex",
+                  gap: 12,
+                  alignItems: "center"
+                }}
+              >
+                {r.image_url ? (
+                  <img
+                    src={r.image_url}
+                    alt="receipt"
+                    onClick={() => window.open(r.image_url, "_blank")}
+                    style={{ width: 54, height: 54, objectFit: "cover", borderRadius: 8, cursor: "pointer", border: `1px solid ${P.bdr}` }}
+                  />
+                ) : (
+                  <div style={{ width: 54, height: 54, borderRadius: 8, background: P.bg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>
+                    🧾
+                  </div>
+                )}
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: Ft.h, color: P.grn }}>
+                    ${Number(r.amount).toFixed(2)}
+                  </div>
+                  <div style={{ fontSize: 11, color: P.lt, fontFamily: Ft.m, marginTop: 2 }}>
+                    {fmtDateFull(r.receipt_date)}
+                    {r.note && ` · ${r.note}`}
+                  </div>
+                  <button
+                    onClick={() => openEditReceipt(r)}
+                    style={{ fontSize: 11, color: P.mid, background: "none", border: "none", cursor: "pointer", marginTop: 4, fontFamily: Ft.m, padding: 0 }}
+                  >
+                    ✏️ Edit
+                  </button>
+                  <button
+                    onClick={() => setDelRcMod(r)}
+                    style={{ fontSize: 11, color: P.lt, background: "none", border: "none", cursor: "pointer", marginTop: 4, marginLeft: 14, fontFamily: Ft.m, padding: 0 }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
 
@@ -2165,32 +2406,52 @@ export default function App() {
                   const next = arr[i + 1];
                   const endOfUser = !next || next.user_name !== t.user_name;
                   const ut = userTotals[t.user_name];
+                  const urt = userReceiptTotals[t.user_name];
+                  const hasRc = urt && urt.count > 0 && !showRejected;
+                  const grand = (ut ? ut.reimb : 0) + (hasRc ? urt.amount : 0);
                   const totalBox = endOfUser && ut ? (
                     <div
                       key={`tot-${t.id}`}
                       style={{
                         marginTop: 6,
                         marginBottom: 12,
-                        padding: "10px 14px",
+                        padding: "12px 14px",
                         background: P.tBg,
                         border: `2px solid ${P.tan}`,
-                        borderRadius: 12,
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center"
+                        borderRadius: 12
                       }}
                     >
-                      <div style={{ fontSize: 13, fontWeight: 700, fontFamily: Ft.m, color: P.txt, textTransform: "uppercase", letterSpacing: 1 }}>
-                        {t.user_name} Total ({ut.count} trip{ut.count === 1 ? "" : "s"})
+                      <div style={{ fontSize: 13, fontWeight: 700, fontFamily: Ft.m, color: P.txt, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+                        {t.user_name} Total
                       </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 16, fontWeight: 700, fontFamily: Ft.h }}>
-                          {ut.miles.toFixed(1)} mi
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: hasRc ? 4 : 0 }}>
+                        <div style={{ fontSize: 12, color: P.mid, fontFamily: Ft.m }}>
+                          {ut.count} trip{ut.count === 1 ? "" : "s"} · {ut.miles.toFixed(1)} mi
                         </div>
-                        <div style={{ fontSize: 13, color: P.grn, fontFamily: Ft.m, fontWeight: 700 }}>
+                        <div style={{ fontSize: 14, color: P.grn, fontFamily: Ft.m, fontWeight: 700 }}>
                           ${ut.reimb.toFixed(2)}
                         </div>
                       </div>
+                      {hasRc && (
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                          <div style={{ fontSize: 12, color: P.mid, fontFamily: Ft.m }}>
+                            {urt.count} receipt{urt.count === 1 ? "" : "s"}
+                          </div>
+                          <div style={{ fontSize: 14, color: P.grn, fontFamily: Ft.m, fontWeight: 700 }}>
+                            ${urt.amount.toFixed(2)}
+                          </div>
+                        </div>
+                      )}
+                      {hasRc && (
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: `1.5px solid ${P.tan}`, marginTop: 6, paddingTop: 6 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, fontFamily: Ft.m, color: P.txt, textTransform: "uppercase", letterSpacing: 1 }}>
+                            Total Owed
+                          </div>
+                          <div style={{ fontSize: 17, fontWeight: 700, fontFamily: Ft.h, color: P.red }}>
+                            ${grand.toFixed(2)}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : null;
                   const tail = totalBox ? [card, totalBox] : [card];
@@ -2815,6 +3076,90 @@ export default function App() {
         <Btn full disabled={!sharePhones.trim()} onClick={shareApp}>
           Send via SMS
         </Btn>
+      </Modal>
+
+      <Modal open={rcMod} onClose={() => { setRcMod(false); setEditRc(null); }} title={editRc ? "Edit Receipt" : "Add Receipt"}>
+        {isA && (
+          <Fl label="Receipt For">
+            <select
+              style={{ ...iS, appearance: "none" }}
+              value={rcForUser || user.id}
+              onChange={e => setRcForUser(e.target.value === user.id ? "" : e.target.value)}
+            >
+              <option value={user.id}>{user.name} (me)</option>
+              {users.filter(u => u.active && u.id !== user.id).map(u => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+          </Fl>
+        )}
+        <Fl label="Photo">
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <label style={{ flex: 1, minWidth: 130, cursor: "pointer" }}>
+              <div style={{ ...iS, textAlign: "center", color: P.mid, cursor: "pointer" }}>
+                📷 Camera
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                style={{ display: "none" }}
+                onChange={e => pickReceiptFile(e.target.files[0])}
+              />
+            </label>
+            <label style={{ flex: 1, minWidth: 130, cursor: "pointer" }}>
+              <div style={{ ...iS, textAlign: "center", color: P.mid, cursor: "pointer" }}>
+                🖼️ Gallery / Files
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={e => pickReceiptFile(e.target.files[0])}
+              />
+            </label>
+          </div>
+          {rcPreview && (
+            <img src={rcPreview} alt="preview" style={{ marginTop: 10, width: "100%", maxHeight: 240, objectFit: "contain", borderRadius: 10, border: `1px solid ${P.bdr}` }} />
+          )}
+        </Fl>
+        <Fl label="Amount ($)">
+          <input
+            style={iS}
+            type="number"
+            inputMode="decimal"
+            step="0.01"
+            value={rcAmt}
+            onChange={e => setRcAmt(e.target.value)}
+            placeholder="0.00"
+          />
+        </Fl>
+        <Fl label="Receipt Date">
+          <input style={iS} type="date" value={rcDate} onChange={e => setRcDate(e.target.value)} />
+        </Fl>
+        <Fl label="Note">
+          <input style={iS} value={rcNote} onChange={e => setRcNote(e.target.value)} placeholder="optional" />
+        </Fl>
+        <Btn full disabled={!rcAmt || rcUp} onClick={saveReceipt}>
+          {rcUp ? "Saving..." : editRc ? "Save Changes" : "Save Receipt"}
+        </Btn>
+      </Modal>
+
+      <Modal open={!!delRcMod} onClose={() => setDelRcMod(null)} title="Delete Receipt?">
+        <p style={{ color: P.mid, marginBottom: 20 }}>
+          Permanently delete this <strong>${Number(delRcMod?.amount || 0).toFixed(2)}</strong> receipt from {delRcMod && fmtDateFull(delRcMod.receipt_date)}? This cannot be undone.
+        </p>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            onClick={() => setDelRcMod(null)}
+            style={{ flex: 1, padding: 12, borderRadius: 10, border: `1.5px solid ${P.bdr}`, background: "#fff", color: P.mid, fontWeight: 600, cursor: "pointer" }}
+          >
+            Cancel
+          </button>
+          <Btn full color={P.red} onClick={() => deleteReceipt(delRcMod.id)} sx={{ flex: 1 }}>
+            Delete
+          </Btn>
+        </div>
       </Modal>
 
       <Nav
