@@ -208,67 +208,55 @@ const iS = {
 };
 
 function Logo({ dark }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      <svg width="38" height="38" viewBox="0 0 100 100" style={{ filter: "drop-shadow(0 2px 4px rgba(58,42,28,.18))" }}>
-        <circle
-          cx="50"
-          cy="50"
-          r="48"
-          fill="#fff"
-          stroke={P.bdr}
-          strokeWidth="1.5"
-        />
-        <path
-          d="M30 78 C30 78,28 55,32 40 C36 25,38 20,36 15"
-          fill="none"
-          stroke={P.tan}
-          strokeWidth="6"
-          strokeLinecap="round"
-        />
-        <path
-          d="M38 78 C38 78,36 50,42 35 C48 20,50 14,47 8"
-          fill="none"
-          stroke={P.red}
-          strokeWidth="6.5"
-          strokeLinecap="round"
-        />
-        <path
-          d="M44 80 L44 30 L58 55 L72 22 L72 80"
-          fill="none"
-          stroke={P.blk}
-          strokeWidth="7"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-      <div>
-        <div
+  if (dark) {
+    // Charcoal header: white M-mark + wordmark lockup
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+        <img
+          src="/logo-mark-white.png"
+          alt="Masterpiece"
           style={{
-            fontFamily: Ft.h,
-            fontSize: 15,
-            fontWeight: 700,
-            color: dark ? P.onInk : P.txt,
-            letterSpacing: "-.01em",
-            lineHeight: 1.1
+            height: 30,
+            width: "auto",
+            display: "block",
+            filter: "drop-shadow(0 2px 6px rgba(0,0,0,.45))"
           }}
-        >
-          Masterpiece
-        </div>
-        <div
-          style={{
-            fontSize: 8,
-            fontFamily: Ft.m,
-            color: P.red,
-            fontWeight: 700,
-            letterSpacing: 1.4,
-            textTransform: "uppercase"
-          }}
-        >
-          Mileage Tracker
+        />
+        <div style={{ lineHeight: 1.05 }}>
+          <div
+            style={{
+              fontFamily: Ft.h,
+              fontSize: 15,
+              fontWeight: 700,
+              color: P.onInk,
+              letterSpacing: "-.01em"
+            }}
+          >
+            Masterpiece
+          </div>
+          <div
+            style={{
+              fontSize: 8,
+              fontFamily: Ft.m,
+              color: P.redOnInk,
+              fontWeight: 700,
+              letterSpacing: 1.4,
+              textTransform: "uppercase"
+            }}
+          >
+            Mileage Tracker
+          </div>
         </div>
       </div>
-    </div>
+    );
+  }
+  // Light login: full color brand logo
+  return (
+    <img
+      src="/logo-color.png"
+      alt="Masterpiece Outdoor Living"
+      style={{ height: 50, width: "auto", display: "block" }}
+    />
   );
 }
 
@@ -1302,6 +1290,12 @@ body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-r
 .mp-kpi{transition:transform .2s cubic-bezier(.16,1,.3,1),box-shadow .2s ease}
 .mp-kpi:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(58,42,28,.13), inset 0 1px 0 rgba(255,255,255,.8)}
 
+/* ---- glow card: glowing colored top edge + soft colored halo (light/warm) ---- */
+.mp-glow{position:relative;border-radius:18px;background:var(--gc,linear-gradient(180deg,#fffefb 0%,#fdfaf4 100%));border:1px solid #e7ded0;box-shadow:0 1px 2px rgba(58,42,28,.05), 0 12px 30px -10px var(--gw,rgba(196,30,42,.22)), inset 0 1px 0 rgba(255,255,255,.7);transition:transform .22s cubic-bezier(.16,1,.3,1), box-shadow .22s ease;overflow:hidden;isolation:isolate}
+.mp-glow::before{content:"";position:absolute;top:0;left:0;right:0;height:4px;background:var(--ge,#c41e2a);box-shadow:0 0 16px 1px var(--ge,#c41e2a), 0 0 5px var(--ge,#c41e2a);z-index:1}
+.mp-glow:hover{transform:translateY(-3px);box-shadow:0 2px 6px rgba(58,42,28,.06), 0 20px 44px -10px var(--gw,rgba(196,30,42,.36)), inset 0 1px 0 rgba(255,255,255,.8)}
+@media (prefers-reduced-motion:reduce){.mp-glow:hover{transform:none}}
+
 .mp-stripe{height:3px;border:0;border-radius:3px;background:linear-gradient(90deg,#c4b59a 0 33.33%,#c41e2a 33.33% 66.66%,#1a1512 66.66% 100%)}
 .mp-rule-gold{height:1px;border:0;background:linear-gradient(90deg,transparent,rgba(176,141,87,.55),transparent)}
 
@@ -1369,8 +1363,8 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
             <div style={{ display: "inline-flex" }}>
               <Logo />
             </div>
-            <p className="mp-eyebrow" style={{ textAlign: "center", marginTop: 10, color: P.gold }}>
-              Outdoor Living — Mileage Tracker
+            <p className="mp-eyebrow" style={{ textAlign: "center", marginTop: 12, color: P.gold }}>
+              Employee Mileage Tracker
             </p>
           </div>
           <div
@@ -1407,6 +1401,10 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
               </button>
             ))}
           </div>
+          <div
+            className="mp-glow"
+            style={{ padding: "20px 18px 22px", "--ge": P.red, "--gw": "rgba(196,30,42,.32)" }}
+          >
           {mode === "signup" && (
             <>
               <Fl label="Your Name">
@@ -1507,6 +1505,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
               </Btn>
             </>
           )}
+          </div>
         </div>
       </div>
     );
@@ -1638,14 +1637,11 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
               }}
             >
               <div
-                className="mp-kpi mp-card"
+                className="mp-glow"
                 style={{
-                  background: P.gCard,
-                  borderRadius: 12,
-                  padding: "12px 14px",
-                  border: `1px solid ${P.bdr}`,
-                  borderLeft: `4px solid ${P.tan}`,
-                  boxShadow: P.sh2
+                  padding: "13px 15px 14px",
+                  "--ge": P.tan,
+                  "--gw": "rgba(196,181,154,.5)"
                 }}
               >
                 <div
@@ -1665,14 +1661,11 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                 </div>
               </div>
               <div
-                className="mp-kpi mp-card"
+                className="mp-glow"
                 style={{
-                  background: P.gCard,
-                  borderRadius: 12,
-                  padding: "12px 14px",
-                  border: `1px solid ${P.bdr}`,
-                  borderLeft: `4px solid ${P.red}`,
-                  boxShadow: P.sh2
+                  padding: "13px 15px 14px",
+                  "--ge": P.red,
+                  "--gw": "rgba(196,30,42,.42)"
                 }}
               >
                 <div
@@ -1692,14 +1685,11 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                 </div>
               </div>
               <div
-                className="mp-kpi mp-card"
+                className="mp-glow"
                 style={{
-                  background: P.gCard,
-                  borderRadius: 12,
-                  padding: "12px 14px",
-                  border: `1px solid ${P.bdr}`,
-                  borderLeft: `4px solid ${P.blk}`,
-                  boxShadow: P.sh2
+                  padding: "13px 15px 14px",
+                  "--ge": P.gold,
+                  "--gw": "rgba(176,141,87,.45)"
                 }}
               >
                 <div
