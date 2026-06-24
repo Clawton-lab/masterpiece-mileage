@@ -1,4 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
+import { metersToMiles, reimbursement } from "./engines/money.js";
+import { getPayPeriod } from "./engines/payPeriod.js";
+import { fmtDate, fmtDateFull, today, thisYear } from "./engines/dates.js";
 
 const SB = "https://lvhqfslhcpiwshgvrnlp.supabase.co";
 const KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2aHFmc2xoY3Bpd3NoZ3ZybmxwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NjU5MTMsImV4cCI6MjA5MTM0MTkxM30.2KDKoJeGpiKs_7lZwxW8TAcldvzM3WhimJfQYxyZ_c0";
@@ -98,7 +101,7 @@ async function getDrivingMiles(from, to) {
     const d = await r.json();
     if (d.code !== "Ok" || !d.routes || d.routes.length === 0)
       throw new Error(`No route found: ${d.code || "unknown error"}`);
-    const miles = Math.round(d.routes[0].distance * 0.000621371 * 10) / 10;
+    const miles = metersToMiles(d.routes[0].distance);
     try {
       await api("route_distances", {
         method: "POST",
@@ -115,51 +118,8 @@ async function getDrivingMiles(from, to) {
   }
 }
 
-function getPayPeriod(date, anchor, freq = "biweekly", time = "12:00", tz = "America/Denver", offset = 0) {
-  const [hh, mm] = time.split(":").map(Number);
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hour12: false
-  });
-  const p = Object.fromEntries(fmt.formatToParts(new Date()).map(x => [x.type, x.value]));
-  const nH = +p.hour === 24 ? 0 : +p.hour;
-  const [aY, aM, aD] = anchor.split("-").map(Number);
-  const aMin = Date.UTC(aY, aM - 1, aD, hh, mm) / 60000;
-  const nMin = Date.UTC(+p.year, +p.month - 1, +p.day, nH, +p.minute) / 60000;
-  const pd = freq === "weekly" ? 7 : freq === "monthly" ? 30 : 14;
-  const pm = pd * 1440;
-  const idx = Math.floor((nMin - aMin) / pm) + offset;
-  const sMin = aMin + idx * pm;
-  const eMin = sMin + pm - 1440;
-  const fmt2 = m => {
-    const d = new Date(m * 60000);
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
-  };
-  return { start: fmt2(sMin), end: fmt2(eMin) };
-}
-
-function fmtDate(d) {
-  return new Date(d + "T12:00:00").toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric"
-  });
-}
-
-function fmtDateFull(d) {
-  return new Date(d + "T12:00:00").toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric"
-  });
-}
-
-function today() {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Denver", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-}
-
-function thisYear() {
-  return new Date().getFullYear();
-}
+// getPayPeriod, fmtDate, fmtDateFull, today, thisYear moved to src/engines/
+// (payPeriod.js, dates.js) and are imported at the top of this file.
 
 const ROLES = { super_admin: 4, senior_admin: 3, admin: 2, user: 1 };
 const RLBL = {
@@ -671,7 +631,7 @@ export default function App() {
         setManualMod(true);
         return;
       }
-      const reimb = Math.round(miles * settings.irs_rate * 100) / 100;
+      const reimb = reimbursement(miles, settings.irs_rate);
       await api("trips", {
         method: "POST",
         body: JSON.stringify({
@@ -711,7 +671,7 @@ export default function App() {
     const fromP = projs.find(p => p.id === fromId);
     const toP = projs.find(p => p.id === toId);
     const tgt = (isA && logForUser) ? users.find(u => u.id === logForUser) : user;
-    const reimb = Math.round(miles * settings.irs_rate * 100) / 100;
+    const reimb = reimbursement(miles, settings.irs_rate);
     try {
       await api("trips", {
         method: "POST",
@@ -940,14 +900,13 @@ export default function App() {
     let reimb = Number(editT.reimbursement);
     if (edFr !== editT.from_project_id || edTo !== editT.to_project_id) {
       setCalc(true);
-      const fG = await geocode(fP.address);
-      const tG = await geocode(tP.address);
-      if (fG && tG) {
-        const m = await getDrivingMiles(fG, tG);
-        if (m) {
-          miles = m;
-          reimb = Math.round(m * settings.irs_rate * 100) / 100;
-        }
+      // getDrivingMiles takes ADDRESS STRINGS (it geocodes + caches internally),
+      // exactly like logTrip does. Previously this passed geocoded {lat,lng}
+      // objects, so the recalc silently failed and the trip kept its old miles.
+      const m = await getDrivingMiles(fP.address, tP.address);
+      if (m) {
+        miles = m;
+        reimb = reimbursement(m, settings.irs_rate);
       }
       setCalc(false);
     }
@@ -1079,14 +1038,6 @@ export default function App() {
   const ppMiles = ppTrips.reduce((s, t) => t.status === "rejected" ? s : s + Number(t.miles), 0);
   const ytdMiles = ytdTrips.reduce((s, t) => t.status === "rejected" ? s : s + Number(t.miles), 0);
 
-  console.log("=== REPORTS DEBUG ===");
-  console.log("Total trips loaded:", trips.length);
-  console.log("All trip dates:", trips.map(t => ({date: t.trip_date, user: t.user_name})));
-  console.log("Current pay period:", pp);
-  console.log("reportUser:", reportUser);
-  console.log("reportPeriod:", reportPeriod);
-  console.log("Current user:", user?.name, "Role:", user?.role, "ID:", user?.id);
-  
   const allFilteredTrips = trips.filter(t => {
     const userMatch = reportUser === "all" || t.user_id === reportUser;
     let periodMatch = true;
@@ -1112,9 +1063,6 @@ export default function App() {
   const rejectedTrips = allFilteredTrips.filter(t => t.status === "rejected");
   const reportTrips = showRejected ? rejectedTrips : activeTrips;
   
-  console.log("Filtered report trips:", reportTrips.length);
-  console.log("Report trip details:", reportTrips.map(t => ({date: t.trip_date, user: t.user_name, miles: t.miles})));
-  console.log("===================");
   const reportMiles = reportTrips.reduce((s, t) => s + Number(t.miles), 0);
   const reportReimb = reportTrips.reduce(
     (s, t) => s + Number(t.reimbursement),
