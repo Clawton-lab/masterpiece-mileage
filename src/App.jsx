@@ -76,6 +76,15 @@ async function geocode(address) {
 
 async function getDrivingMiles(from, to) {
   try {
+    const cached = await api(`route_distances?from_address=eq.${encodeURIComponent(from)}&to_address=eq.${encodeURIComponent(to)}&select=miles&limit=1`);
+    if (cached && cached.length > 0) {
+      console.log("Cache hit:", from, "->", to, cached[0].miles);
+      return Number(cached[0].miles);
+    }
+  } catch (e) {
+    console.error("Cache lookup error:", e);
+  }
+  try {
     const a = await geocode(from);
     if (!a) throw new Error(`Could not geocode: ${from}`);
     await new Promise(r => setTimeout(r, 300));
@@ -89,7 +98,17 @@ async function getDrivingMiles(from, to) {
     const d = await r.json();
     if (d.code !== "Ok" || !d.routes || d.routes.length === 0)
       throw new Error(`No route found: ${d.code || "unknown error"}`);
-    return Math.round(d.routes[0].distance * 0.000621371 * 10) / 10;
+    const miles = Math.round(d.routes[0].distance * 0.000621371 * 10) / 10;
+    try {
+      await api("route_distances", {
+        method: "POST",
+        headers: { ...H, Prefer: "resolution=merge-duplicates" },
+        body: JSON.stringify({ from_address: from, to_address: to, miles })
+      });
+    } catch (e) {
+      console.error("Cache save error:", e);
+    }
+    return miles;
   } catch (e) {
     console.error("Mileage calculation error:", e);
     return null;
