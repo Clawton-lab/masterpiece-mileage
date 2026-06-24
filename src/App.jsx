@@ -1711,11 +1711,12 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
             </div>
             <div
               style={{
-                background: "#fff",
+                background: P.gCard,
                 borderRadius: 16,
                 padding: 20,
                 border: `1px solid ${P.bdr}`,
                 borderTop: `3px solid ${P.tan}`,
+                boxShadow: P.sh2,
                 marginBottom: 16
               }}
             >
@@ -1818,7 +1819,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                       key={t.id}
                       style={{
                         padding: "12px 14px",
-                        background: "#fff",
+                        background: P.gCard,
                         borderRadius: 12,
                         border: `1px solid ${P.bdr}`,
                         marginBottom: 8
@@ -1924,7 +1925,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                 key={r.id}
                 style={{
                   padding: "12px 14px",
-                  background: "#fff",
+                  background: P.gCard,
                   borderRadius: 12,
                   border: `1px solid ${P.bdr}`,
                   marginBottom: 8,
@@ -1994,11 +1995,12 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
             </div>
             <div
               style={{
-                background: "#fff",
+                background: P.gCard,
                 borderRadius: 16,
                 padding: 20,
                 border: `1px solid ${P.bdr}`,
                 borderTop: `3px solid ${P.red}`,
+                boxShadow: P.sh2,
                 marginBottom: 16
               }}
             >
@@ -2068,7 +2070,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                   key={t.id}
                   style={{
                     padding: "12px 14px",
-                    background: "#fff",
+                    background: P.gCard,
                     borderRadius: 12,
                     border: `1px solid ${P.bdr}`,
                     marginBottom: 8
@@ -2198,7 +2200,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                 key={p.id}
                 style={{
                   padding: "12px 16px",
-                  background: "#fff",
+                  background: P.gCard,
                   borderRadius: 12,
                   border: `1px solid ${P.bdr}`,
                   marginBottom: 8,
@@ -2299,7 +2301,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                 </div>
                 <div
                   style={{
-                    background: "#fff",
+                    background: P.gCard,
                     borderRadius: 12,
                     padding: 16,
                     border: `1px solid ${P.bdr}`,
@@ -2394,7 +2396,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                       key={t.id}
                       style={{
                         padding: "12px 14px",
-                        background: "#fff",
+                        background: P.gCard,
                         borderRadius: 12,
                         border: `1px solid ${P.bdr}`,
                         marginBottom: 8
@@ -2632,18 +2634,17 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                   <button
                     key={p.k}
                     onClick={() => p.k === "share" ? setShareMod(true) : setAdPg(p.k)}
+                    className="mp-glow"
                     style={{
                       display: "block",
                       width: "100%",
                       textAlign: "left",
                       padding: "16px 20px",
-                      background: "#fff",
-                      borderRadius: 14,
-                      border: `1px solid ${P.bdr}`,
-                      borderLeft: `4px solid ${p.c}`,
-                      marginBottom: 10,
+                      marginBottom: 12,
                       cursor: "pointer",
-                      fontFamily: Ft.b
+                      fontFamily: Ft.b,
+                      "--ge": p.c,
+                      "--gw": "rgba(58,42,28,.16)"
                     }}
                   >
                     <div style={{ fontWeight: 700, fontSize: 16 }}>{p.l}</div>
@@ -2689,7 +2690,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                       key={u.id}
                       style={{
                         padding: "12px 16px",
-                        background: "#fff",
+                        background: P.gCard,
                         borderRadius: 12,
                         border: `1px solid ${P.bdr}`,
                         marginBottom: 8,
@@ -2744,7 +2745,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                                 padding: "4px 10px",
                                 borderRadius: 6,
                                 border: `1px solid ${P.bdr}`,
-                                background: "#fff",
+                                background: P.gCard,
                                 color: P.mid,
                                 cursor: "pointer",
                                 fontFamily: Ft.m
@@ -2837,7 +2838,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                 </h2>
                 <div
                   style={{
-                    background: "#fff",
+                    background: P.gCard,
                     borderRadius: 14,
                     border: `1px solid ${P.bdr}`,
                     padding: 16,
@@ -2873,7 +2874,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                 </div>
                 <div
                   style={{
-                    background: "#fff",
+                    background: P.gCard,
                     borderRadius: 14,
                     border: `1px solid ${P.bdr}`,
                     padding: 16,
@@ -3092,7 +3093,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
               padding: 12,
               borderRadius: 10,
               border: `1.5px solid ${P.bdr}`,
-              background: "#fff",
+              background: P.gCard,
               color: P.mid,
               fontWeight: 600,
               cursor: "pointer"
@@ -3124,7 +3125,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
               padding: 12,
               borderRadius: 10,
               border: `1.5px solid ${P.bdr}`,
-              background: "#fff",
+              background: P.gCard,
               color: P.mid,
               fontWeight: 600,
               cursor: "pointer"
@@ -3254,7 +3255,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
         <div style={{ display: "flex", gap: 10 }}>
           <button
             onClick={() => setDelRcMod(null)}
-            style={{ flex: 1, padding: 12, borderRadius: 10, border: `1.5px solid ${P.bdr}`, background: "#fff", color: P.mid, fontWeight: 600, cursor: "pointer" }}
+            style={{ flex: 1, padding: 12, borderRadius: 10, border: `1.5px solid ${P.bdr}`, background: P.gCard, color: P.mid, fontWeight: 600, cursor: "pointer" }}
           >
             Cancel
           </button>
