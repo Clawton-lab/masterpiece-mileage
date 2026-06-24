@@ -2516,43 +2516,70 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                   const totalBox = endOfUser && ut ? (
                     <div
                       key={`tot-${t.id}`}
+                      className="mp-glow"
                       style={{
-                        marginTop: 6,
-                        marginBottom: 12,
-                        padding: "12px 14px",
-                        background: P.tBg,
-                        border: `2px solid ${P.tan}`,
-                        borderRadius: 12
+                        marginTop: 10,
+                        marginBottom: 16,
+                        padding: "16px 18px",
+                        "--ge": P.red,
+                        "--gw": "rgba(196,30,42,.30)"
                       }}
                     >
-                      <div style={{ fontSize: 13, fontWeight: 700, fontFamily: Ft.m, color: P.txt, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-                        {t.user_name} Total
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: hasRc ? 4 : 0 }}>
-                        <div style={{ fontSize: 12, color: P.mid, fontFamily: Ft.m }}>
-                          {ut.count} trip{ut.count === 1 ? "" : "s"} · {ut.miles.toFixed(1)} mi
+                      <div style={{ display: "flex", alignItems: "center", gap: 13 }}>
+                        <div
+                          style={{
+                            width: 44,
+                            height: 44,
+                            borderRadius: 13,
+                            flexShrink: 0,
+                            background: P.blk,
+                            color: "#fff",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontFamily: Ft.h,
+                            fontWeight: 700,
+                            fontSize: 19,
+                            boxShadow: "inset 0 1px 0 rgba(255,255,255,.18), 0 3px 8px rgba(58,42,28,.22)"
+                          }}
+                        >
+                          {(t.user_name || "?").charAt(0).toUpperCase()}
                         </div>
-                        <div style={{ fontSize: 14, color: P.grn, fontFamily: Ft.m, fontWeight: 700 }}>
-                          ${ut.reimb.toFixed(2)}
-                        </div>
-                      </div>
-                      {hasRc && (
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-                          <div style={{ fontSize: 12, color: P.mid, fontFamily: Ft.m }}>
-                            {urt.count} receipt{urt.count === 1 ? "" : "s"}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div className="mp-eyebrow" style={{ color: P.gold, marginBottom: 3 }}>
+                            {t.user_name} — Total
                           </div>
-                          <div style={{ fontSize: 14, color: P.grn, fontFamily: Ft.m, fontWeight: 700 }}>
-                            ${urt.amount.toFixed(2)}
+                          <div style={{ fontSize: 12.5, color: P.mid, fontFamily: Ft.m }}>
+                            {ut.count} trip{ut.count === 1 ? "" : "s"} · {ut.miles.toFixed(1)} mi
+                            {hasRc ? ` · ${urt.count} receipt${urt.count === 1 ? "" : "s"}` : ""}
                           </div>
                         </div>
-                      )}
-                      {hasRc && (
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: `1.5px solid ${P.tan}`, marginTop: 6, paddingTop: 6 }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, fontFamily: Ft.m, color: P.txt, textTransform: "uppercase", letterSpacing: 1 }}>
-                            Total Owed
-                          </div>
-                          <div style={{ fontSize: 17, fontWeight: 700, fontFamily: Ft.h, color: P.red }}>
+                        <div style={{ textAlign: "right", flexShrink: 0 }}>
+                          <div className="mp-num mp-display" style={{ fontSize: 27, fontWeight: 700, color: P.txt, lineHeight: 1 }}>
                             ${grand.toFixed(2)}
+                          </div>
+                          <div style={{ fontSize: 9.5, fontFamily: Ft.m, color: P.lt, textTransform: "uppercase", letterSpacing: 1, marginTop: 4 }}>
+                            {hasRc ? "Total Owed" : "Reimbursement"}
+                          </div>
+                        </div>
+                      </div>
+                      {hasRc && (
+                        <div style={{ display: "flex", gap: 14, marginTop: 13, paddingTop: 13, borderTop: `1px solid ${P.bdr}` }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 9.5, fontFamily: Ft.m, color: P.lt, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>
+                              Mileage
+                            </div>
+                            <div style={{ fontSize: 15, fontWeight: 700, fontFamily: Ft.m, color: P.grn }}>
+                              ${ut.reimb.toFixed(2)}
+                            </div>
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 9.5, fontFamily: Ft.m, color: P.lt, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>
+                              Receipts
+                            </div>
+                            <div style={{ fontSize: 15, fontWeight: 700, fontFamily: Ft.m, color: P.grn }}>
+                              ${urt.amount.toFixed(2)}
+                            </div>
                           </div>
                         </div>
                       )}
