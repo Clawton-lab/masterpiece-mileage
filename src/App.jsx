@@ -1318,7 +1318,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
 .mp-badge{font-family:'IBM Plex Mono',monospace;font-weight:700;text-transform:uppercase;letter-spacing:.08em;border-radius:999px;display:inline-flex;align-items:center;gap:4px;line-height:1}
 .mp-shimmer{background:linear-gradient(100deg,#efe8dc 30%,#f6f1e8 50%,#efe8dc 70%);background-size:220% 100%;animation:mpShimmer 1.4s ease-in-out infinite;border-radius:8px}
 .mp-display{font-family:'Bitter',serif;letter-spacing:-.012em;line-height:1.08}
-.mp-eyebrow{font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.18em;font-size:10px;font-weight:600;color:#b08d57}
+.mp-eyebrow{font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.13em;font-size:10px;font-weight:700;color:#8a6a33}
 .mp-num{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 
 *{scrollbar-width:thin;scrollbar-color:#d3c7b2 transparent}
@@ -1363,7 +1363,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
             <div style={{ display: "inline-flex" }}>
               <Logo />
             </div>
-            <p className="mp-eyebrow" style={{ textAlign: "center", marginTop: 12, color: P.gold }}>
+            <p className="mp-eyebrow" style={{ textAlign: "center", marginTop: 12 }}>
               Employee Mileage Tracker
             </p>
           </div>
@@ -1993,72 +1993,37 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                 {myShowRejected ? `← Active` : `✕ Rejected (${myRejectedTrips.length})`}
               </Btn>
             </div>
-            <div
-              style={{
-                background: P.gCard,
-                borderRadius: 16,
-                padding: 20,
-                border: `1px solid ${P.bdr}`,
-                borderTop: `3px solid ${P.red}`,
-                boxShadow: P.sh2,
-                marginBottom: 16
-              }}
-            >
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                <div>
-                  <div
-                    style={{
-                      fontSize: 10,
-                      fontFamily: Ft.m,
-                      color: P.lt,
-                      textTransform: "uppercase"
-                    }}
-                  >
-                    Pay Period Miles
-                  </div>
-                  <div style={{ fontSize: 32, fontWeight: 700, fontFamily: Ft.h }}>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div
+                  className="mp-glow"
+                  style={{ padding: "14px 16px", "--ge": P.red, "--gw": "rgba(196,30,42,.32)" }}
+                >
+                  <div className="mp-eyebrow">Pay Period</div>
+                  <div className="mp-num mp-display" style={{ fontSize: 30, fontWeight: 700, color: P.txt, lineHeight: 1.05, marginTop: 5 }}>
                     {ppMiles.toFixed(1)}
+                    <span style={{ fontSize: 13, color: P.mid, fontFamily: Ft.b, fontWeight: 600 }}> mi</span>
                   </div>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: P.grn,
-                      fontFamily: Ft.m,
-                      fontWeight: 600
-                    }}
-                  >
+                  <div className="mp-num" style={{ fontSize: 15, color: P.grn, fontWeight: 700, marginTop: 4 }}>
                     ${(ppMiles * settings.irs_rate).toFixed(2)}
                   </div>
                 </div>
-                <div>
-                  <div
-                    style={{
-                      fontSize: 10,
-                      fontFamily: Ft.m,
-                      color: P.lt,
-                      textTransform: "uppercase"
-                    }}
-                  >
-                    Year to Date
-                  </div>
-                  <div style={{ fontSize: 32, fontWeight: 700, fontFamily: Ft.h }}>
+                <div
+                  className="mp-glow"
+                  style={{ padding: "14px 16px", "--ge": P.gold, "--gw": "rgba(176,141,87,.4)" }}
+                >
+                  <div className="mp-eyebrow">Year to Date</div>
+                  <div className="mp-num mp-display" style={{ fontSize: 30, fontWeight: 700, color: P.txt, lineHeight: 1.05, marginTop: 5 }}>
                     {ytdMiles.toFixed(1)}
+                    <span style={{ fontSize: 13, color: P.mid, fontFamily: Ft.b, fontWeight: 600 }}> mi</span>
                   </div>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: P.grn,
-                      fontFamily: Ft.m,
-                      fontWeight: 600
-                    }}
-                  >
+                  <div className="mp-num" style={{ fontSize: 15, color: P.grn, fontWeight: 700, marginTop: 4 }}>
                     ${(ytdMiles * settings.irs_rate).toFixed(2)}
                   </div>
                 </div>
               </div>
-              <div style={{ marginTop: 12, fontSize: 11, color: P.lt, fontFamily: Ft.m }}>
-                {settings.pay_period_frequency === "weekly" ? "Weekly" : settings.pay_period_frequency === "monthly" ? "Monthly" : "Bi-weekly"} Period: {fmtDate(pp.start)} – {fmtDate(pp.end)} · Rate: $
-                {settings.irs_rate}/mi
+              <div style={{ marginTop: 11, fontSize: 11, color: P.lt, fontFamily: Ft.m, textAlign: "center" }}>
+                {settings.pay_period_frequency === "weekly" ? "Weekly" : settings.pay_period_frequency === "monthly" ? "Monthly" : "Bi-weekly"} Period: {fmtDate(pp.start)} – {fmtDate(pp.end)} · Rate: ${settings.irs_rate}/mi
               </div>
             </div>
             {(myShowRejected ? myRejectedTrips : myActiveTrips).slice(0, 50).flatMap((t, i, arr) => {
@@ -2546,8 +2511,13 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                           {(t.user_name || "?").charAt(0).toUpperCase()}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div className="mp-eyebrow" style={{ color: P.gold, marginBottom: 3 }}>
-                            {t.user_name} — Total
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 7, marginBottom: 3 }}>
+                            <span style={{ fontFamily: Ft.h, fontWeight: 700, fontSize: 16, color: P.txt, letterSpacing: "-.01em" }}>
+                              {t.user_name}
+                            </span>
+                            <span style={{ fontFamily: Ft.m, fontSize: 9, fontWeight: 700, color: P.lt, textTransform: "uppercase", letterSpacing: ".12em" }}>
+                              Total
+                            </span>
                           </div>
                           <div style={{ fontSize: 12.5, color: P.mid, fontFamily: Ft.m }}>
                             {ut.count} trip{ut.count === 1 ? "" : "s"} · {ut.miles.toFixed(1)} mi
