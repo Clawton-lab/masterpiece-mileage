@@ -130,24 +130,60 @@ const RLBL = {
 };
 
 const P = {
-  bg: "#faf8f5",
-  card: "#fff",
-  bdr: "#e5e0d8",
-  bdrL: "#f0ece6",
-  txt: "#1a1a1a",
-  mid: "#6b6560",
-  lt: "#9c9590",
-  red: "#c41e2a",
-  rBg: "rgba(196,30,42,0.06)",
-  tan: "#c4b59a",
-  tBg: "rgba(196,181,154,0.12)",
-  blk: "#1a1a1a",
-  grn: "#16a34a",
-  gBg: "rgba(22,163,74,0.08)",
-  amb: "#d97706",
-  aBg: "rgba(217,119,6,0.08)",
-  blue: "#2563eb",
-  bBg: "rgba(37,99,235,0.06)"
+  // ── ORIGINAL KEYS (preserved; values elevated, warmer) ──
+  bg:   "#f7f3ec",
+  card: "#fffdfa",
+  bdr:  "#e7ded0",
+  bdrL: "#f1eae0",
+  txt:  "#1a1512",
+  mid:  "#6b6058",
+  lt:   "#a59a8c",
+  red:  "#c41e2a",
+  rBg:  "rgba(196,30,42,0.06)",
+  tan:  "#c4b59a",
+  tBg:  "rgba(196,181,154,0.14)",
+  blk:  "#1a1512",
+  grn:  "#1f7a45",
+  gBg:  "rgba(31,122,69,0.09)",
+  amb:  "#c2740a",
+  aBg:  "rgba(194,116,10,0.10)",
+  blue: "#2461c4",
+  bBg:  "rgba(36,97,196,0.06)",
+
+  // ── NEW: surface / ink tokens (additive) ──
+  cardHi:    "#ffffff",
+  paper2:    "#fbf7f0",
+  ink2:      "#3a322c",
+  redStrong: "#a5151f",
+  redGlow:   "rgba(196,30,42,0.34)",
+  tanDeep:   "#a8956f",
+  gold:      "#b08d57",
+
+  // charcoal "gallery wall" chrome (header only)
+  onInk:     "#f4efe9",
+  onInkMid:  "#bdb3a8",
+  inkBdr:    "rgba(255,255,255,0.08)",
+  redOnInk:  "#ff8a93",
+
+  // ── NEW: gradients (paper-true, never neon) ──
+  gRed:    "linear-gradient(165deg,#d8323d 0%,#c41e2a 52%,#a5151f 100%)",
+  gTan:    "linear-gradient(165deg,#d4c6ab 0%,#c4b59a 100%)",
+  gInk:    "linear-gradient(165deg,#2c2520 0%,#1a1512 100%)",
+  gCard:   "linear-gradient(180deg,#fffefb 0%,#fdfaf4 100%)",
+  gPaper:  "radial-gradient(115% 85% at 50% -10%,#fbf7f0 0%,#f7f3ec 46%,#f2ece1 100%)",
+  gInkBar: "linear-gradient(180deg,#272019 0%,#1c1714 100%)",
+  gStripe: "linear-gradient(90deg,#c4b59a 0 33.33%,#c41e2a 33.33% 66.66%,#1a1512 66.66% 100%)",
+
+  // ── NEW: layered warm elevation (never pure black) ──
+  sh1: "0 1px 2px rgba(58,42,28,.05), 0 1px 1px rgba(58,42,28,.04)",
+  sh2: "0 1px 2px rgba(58,42,28,.05), 0 4px 14px rgba(58,42,28,.07)",
+  sh3: "0 2px 6px rgba(58,42,28,.06), 0 14px 34px rgba(58,42,28,.12)",
+  sh4: "0 -10px 48px rgba(40,28,18,.22), inset 0 1px 0 rgba(255,255,255,.85)",
+  shInset:   "inset 0 1px 0 rgba(255,255,255,.7)",
+  shField:   "inset 0 1px 2px rgba(58,42,28,.06)",
+  shBar:     "0 6px 24px rgba(20,14,10,.28)",
+  glow:      "0 0 0 1px rgba(196,30,42,.55), 0 8px 22px rgba(196,30,42,.30)",
+  glowToast: "0 10px 30px rgba(196,30,42,.34), 0 2px 8px rgba(58,42,28,.18)"
 };
 
 const Ft = {
@@ -159,20 +195,22 @@ const Ft = {
 const iS = {
   width: "100%",
   padding: "12px 14px",
-  background: "#fff",
+  background: "linear-gradient(180deg,#fffefb 0%,#fdfaf4 100%)",
   border: `1.5px solid ${P.bdr}`,
-  borderRadius: 10,
+  borderRadius: 11,
   color: P.txt,
   fontSize: 15,
   fontFamily: Ft.b,
   outline: "none",
-  boxSizing: "border-box"
+  boxSizing: "border-box",
+  boxShadow: "inset 0 1px 2px rgba(58,42,28,.06)",
+  transition: "border-color .14s ease, box-shadow .16s ease"
 };
 
-function Logo() {
+function Logo({ dark }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      <svg width="38" height="38" viewBox="0 0 100 100">
+      <svg width="38" height="38" viewBox="0 0 100 100" style={{ filter: "drop-shadow(0 2px 4px rgba(58,42,28,.18))" }}>
         <circle
           cx="50"
           cy="50"
@@ -210,7 +248,8 @@ function Logo() {
             fontFamily: Ft.h,
             fontSize: 15,
             fontWeight: 700,
-            color: P.txt,
+            color: dark ? P.onInk : P.txt,
+            letterSpacing: "-.01em",
             lineHeight: 1.1
           }}
         >
@@ -222,7 +261,7 @@ function Logo() {
             fontFamily: Ft.m,
             color: P.red,
             fontWeight: 700,
-            letterSpacing: 1.2,
+            letterSpacing: 1.4,
             textTransform: "uppercase"
           }}
         >
@@ -248,32 +287,32 @@ function Modal({ open, onClose, title, children }) {
     >
       <div
         onClick={onClose}
+        className="mp-scrim"
         style={{
           position: "absolute",
-          inset: 0,
-          background: "rgba(0,0,0,0.4)",
-          backdropFilter: "blur(4px)"
+          inset: 0
         }}
       />
       <div
+        className="mp-sheet"
         style={{
           position: "relative",
-          background: P.card,
+          background: P.gCard,
           borderRadius: "20px 20px 0 0",
           width: "100%",
           maxWidth: 500,
           maxHeight: "90vh",
           overflow: "auto",
           padding: "20px 20px 32px",
-          boxShadow: "0 -8px 40px rgba(0,0,0,0.15)",
-          animation: "slideUp .3s ease"
+          boxShadow: P.sh4,
+          animation: "mpRise .34s cubic-bezier(.16,1,.3,1)"
         }}
       >
         <div
           style={{
-            width: 40,
+            width: 44,
             height: 4,
-            background: P.bdr,
+            background: P.tan,
             borderRadius: 2,
             margin: "0 auto 16px"
           }}
@@ -286,17 +325,19 @@ function Modal({ open, onClose, title, children }) {
             marginBottom: 20
           }}
         >
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, fontFamily: Ft.h }}>
+          <h2 className="mp-display" style={{ fontSize: 18, fontWeight: 700, margin: 0, fontFamily: Ft.h }}>
             {title}
           </h2>
           <button
             onClick={onClose}
+            className="mp-focusable"
             style={{
               background: "none",
               border: "none",
               color: P.lt,
               cursor: "pointer",
               padding: 4,
+              borderRadius: 8,
               fontSize: 20
             }}
           >
@@ -332,25 +373,40 @@ function Fl({ label, children }) {
 }
 
 function Btn({ children, onClick, color = P.red, full, disabled, small, sx }) {
+  const grad =
+    color === P.red ? P.gRed :
+    color === P.tan ? P.gTan :
+    (color === P.blk || color === P.txt) ? P.gInk :
+    color === P.grn ? "linear-gradient(165deg,#249a55 0%,#1f7a45 100%)" :
+    color === P.amb ? "linear-gradient(165deg,#dd870f 0%,#c2740a 100%)" :
+    null;
+  // tan reads dark text for contrast; everything else is white-on-color
+  const fg = color === P.tan ? P.txt : "#fff";
   return (
     <button
+      className="mp-btn mp-focusable"
       onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      aria-disabled={disabled || undefined}
+      data-disabled={disabled ? "true" : undefined}
       style={{
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         gap: 8,
-        padding: small ? "8px 14px" : "12px 20px",
-        borderRadius: 10,
+        padding: small ? "9px 16px" : "13px 22px",
+        borderRadius: 11,
         border: "none",
-        background: color,
-        color: "#fff",
+        background: grad || color,
+        color: fg,
         fontSize: small ? 13 : 15,
         fontWeight: 700,
+        letterSpacing: small ? ".01em" : ".005em",
         cursor: disabled ? "default" : "pointer",
         fontFamily: Ft.b,
-        opacity: disabled ? 0.4 : 1,
+        opacity: disabled ? 0.45 : 1,
         width: full ? "100%" : "auto",
+        WebkitTapHighlightColor: "transparent",
         ...sx
       }}
     >
@@ -367,10 +423,12 @@ function Toast({ m, s }) {
         bottom: 80,
         left: "50%",
         transform: `translateX(-50%) translateY(${s ? 0 : 20}px)`,
-        background: P.red,
+        background: P.gRed,
         color: "#fff",
         padding: "12px 22px",
         borderRadius: 12,
+        boxShadow: P.glowToast,
+        border: "1px solid rgba(255,255,255,.14)",
         fontSize: 14,
         fontWeight: 600,
         fontFamily: Ft.b,
@@ -401,13 +459,13 @@ function Nav({ tab, set, admin }) {
 
   return (
     <nav
+      className="mp-nav"
       style={{
         position: "fixed",
         bottom: 0,
         left: 0,
         right: 0,
         zIndex: 900,
-        background: "#fff",
         borderTop: `2px solid ${P.tan}`,
         display: "flex",
         justifyContent: "space-around",
@@ -418,6 +476,8 @@ function Nav({ tab, set, admin }) {
         <button
           key={t.k}
           onClick={() => set(t.k)}
+          className="mp-tab"
+          data-on={tab === t.k}
           style={{
             display: "flex",
             flexDirection: "column",
@@ -1205,14 +1265,96 @@ export default function App() {
     }
   };
 
-  const css = `@import url('https://fonts.googleapis.com/css2?family=Bitter:wght@400;600;700&family=Source+Sans+3:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}@keyframes fadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}*{box-sizing:border-box}input:focus,select:focus{border-color:${P.red}!important}@media print{nav,button,.no-print{display:none!important}}`;
+  const css = `
+@import url('https://fonts.googleapis.com/css2?family=Bitter:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Source+Sans+3:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
+
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes mpRise{from{opacity:0;transform:translateY(14px) scale(.99)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes mpScrim{from{opacity:0}to{opacity:1}}
+@keyframes mpSheen{0%{transform:translateX(-120%) skewX(-18deg)}60%,100%{transform:translateX(220%) skewX(-18deg)}}
+@keyframes mpShimmer{0%{background-position:-160% 0}100%{background-position:260% 0}}
+
+.mp-paper{position:relative}
+.mp-paper::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(120% 75% at 50% -8%, rgba(255,255,255,.55), transparent 60%),radial-gradient(140% 120% at 50% 120%, rgba(120,86,46,.07), transparent 62%)}
+.mp-paper::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.5;mix-blend-mode:multiply;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.42 0 0 0 0 0.32 0 0 0 0 0.18 0 0 0 0.04 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+.mp-paper>*{position:relative;z-index:1}
+
+:focus-visible{outline:none}
+.mp-focusable:focus-visible,button:focus-visible,a:focus-visible{outline:none;box-shadow:0 0 0 3px #f7f3ec, 0 0 0 5px rgba(196,30,42,.85);border-radius:10px}
+
+.mp-btn{position:relative;overflow:hidden;isolation:isolate;box-shadow:0 1px 2px rgba(58,42,28,.10), 0 2px 8px rgba(196,30,42,.16), inset 0 1px 0 rgba(255,255,255,.22);transition:transform .14s cubic-bezier(.16,1,.3,1), box-shadow .22s cubic-bezier(.16,1,.3,1), filter .14s ease;will-change:transform;-webkit-tap-highlight-color:transparent}
+.mp-btn::after{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:linear-gradient(105deg,transparent 30%,rgba(255,255,255,.45) 50%,transparent 70%);transform:translateX(-120%) skewX(-18deg);opacity:0}
+.mp-btn:not([data-disabled="true"]):hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(58,42,28,.16), 0 6px 20px rgba(196,30,42,.30), 0 0 0 1px rgba(196,30,42,.45), inset 0 1px 0 rgba(255,255,255,.28);filter:saturate(1.05) brightness(1.02)}
+.mp-btn:not([data-disabled="true"]):hover::after{opacity:1;animation:mpSheen .9s cubic-bezier(.16,1,.3,1)}
+.mp-btn:not([data-disabled="true"]):active{transform:translateY(0) scale(.985);box-shadow:0 1px 2px rgba(58,42,28,.14), inset 0 2px 5px rgba(0,0,0,.22)}
+.mp-btn[data-disabled="true"]{filter:grayscale(.25);box-shadow:none;transform:none;cursor:default}
+.mp-btn[data-disabled="true"]::after{display:none}
+
+.mp-card{box-shadow:0 1px 2px rgba(58,42,28,.05),0 4px 14px rgba(58,42,28,.07), inset 0 1px 0 rgba(255,255,255,.7);transition:transform .24s cubic-bezier(.16,1,.3,1), box-shadow .24s cubic-bezier(.16,1,.3,1)}
+.mp-card-i:hover{transform:translateY(-3px);box-shadow:0 2px 6px rgba(58,42,28,.06),0 16px 38px rgba(58,42,28,.14), inset 0 1px 0 rgba(255,255,255,.8)}
+.mp-card-i:active{transform:translateY(-1px)}
+
+.mp-kpi{transition:transform .2s cubic-bezier(.16,1,.3,1),box-shadow .2s ease}
+.mp-kpi:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(58,42,28,.13), inset 0 1px 0 rgba(255,255,255,.8)}
+
+.mp-stripe{height:3px;border:0;border-radius:3px;background:linear-gradient(90deg,#c4b59a 0 33.33%,#c41e2a 33.33% 66.66%,#1a1512 66.66% 100%)}
+.mp-rule-gold{height:1px;border:0;background:linear-gradient(90deg,transparent,rgba(176,141,87,.55),transparent)}
+
+input,select,textarea{transition:border-color .14s ease, box-shadow .16s ease, background .14s ease}
+input:focus,select:focus,textarea:focus{border-color:#c41e2a!important;box-shadow:0 0 0 4px rgba(196,30,42,.10), inset 0 1px 2px rgba(58,42,28,.06)!important}
+input::placeholder,textarea::placeholder{color:#b6ab9c}
+input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!important;box-shadow:0 0 0 4px rgba(194,116,10,.12)!important}
+
+.mp-scrim{background:rgba(40,28,18,.42);backdrop-filter:blur(8px) saturate(1.1);-webkit-backdrop-filter:blur(8px) saturate(1.1);animation:mpScrim .28s ease}
+.mp-sheet{box-shadow:0 -10px 48px rgba(40,28,18,.22), inset 0 1px 0 rgba(255,255,255,.85);background:linear-gradient(180deg,#fffefb 0%,#fdfaf4 100%)}
+.mp-nav{background:rgba(255,253,250,.82);backdrop-filter:blur(16px) saturate(1.25);-webkit-backdrop-filter:blur(16px) saturate(1.25)}
+.mp-bar{backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4)}
+
+.mp-tab{position:relative;transition:color .16s ease,transform .12s ease}
+.mp-tab:hover{transform:translateY(-1px)}
+.mp-tab:active{transform:translateY(0)}
+.mp-tab::after{content:"";position:absolute;left:50%;bottom:-9px;height:2px;width:0;border-radius:2px;background:#c41e2a;transform:translateX(-50%);transition:width .22s cubic-bezier(.16,1,.3,1)}
+.mp-tab[data-on="true"]::after{width:78%}
+
+.mp-badge{font-family:'IBM Plex Mono',monospace;font-weight:700;text-transform:uppercase;letter-spacing:.08em;border-radius:999px;display:inline-flex;align-items:center;gap:4px;line-height:1}
+.mp-shimmer{background:linear-gradient(100deg,#efe8dc 30%,#f6f1e8 50%,#efe8dc 70%);background-size:220% 100%;animation:mpShimmer 1.4s ease-in-out infinite;border-radius:8px}
+.mp-display{font-family:'Bitter',serif;letter-spacing:-.012em;line-height:1.08}
+.mp-eyebrow{font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.18em;font-size:10px;font-weight:600;color:#b08d57}
+.mp-num{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+
+*{scrollbar-width:thin;scrollbar-color:#d3c7b2 transparent}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:linear-gradient(#d3c7b2,#c4b59a);border-radius:8px;border:2px solid #f7f3ec}
+::-webkit-scrollbar-thumb:hover{background:#b9a888}
+::-webkit-scrollbar-track{background:transparent}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
+  .mp-btn:hover,.mp-card-i:hover,.mp-kpi:hover,.mp-tab:hover{transform:none}
+}
+
+@media print{
+  nav,button,.no-print{display:none!important}
+  .mp-paper::before,.mp-paper::after{display:none!important}
+  *{box-shadow:none!important;text-shadow:none!important;background-image:none!important;filter:none!important;animation:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+  body,.mp-paper{background:#fff!important}
+  .mp-bar{background:#fff!important;color:#1a1512!important}
+  .mp-card,.mp-kpi,.mp-sheet{background:#fff!important;border:1px solid #ddd5c7!important}
+  .mp-stripe{background:#1a1512!important;height:1px!important}
+}`;
 
   if (!user)
     return (
       <div
+        className="mp-paper"
         style={{
           minHeight: "100vh",
-          background: P.bg,
+          background: P.gPaper,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -1222,24 +1364,12 @@ export default function App() {
       >
         <style>{css}</style>
         <div style={{ width: "100%", maxWidth: 380, animation: "fadeIn .5s ease" }}>
-          <div
-            style={{
-              display: "flex",
-              height: 4,
-              borderRadius: 4,
-              overflow: "hidden",
-              marginBottom: 28
-            }}
-          >
-            <div style={{ flex: 1, background: P.tan }} />
-            <div style={{ flex: 1, background: P.red }} />
-            <div style={{ flex: 1, background: P.blk }} />
-          </div>
+          <hr className="mp-stripe" style={{ marginBottom: 28, width: "100%" }} />
           <div style={{ textAlign: "center", marginBottom: 32 }}>
             <div style={{ display: "inline-flex" }}>
               <Logo />
             </div>
-            <p style={{ fontSize: 13, color: P.mid, marginTop: 8 }}>
+            <p className="mp-eyebrow" style={{ textAlign: "center", marginTop: 10, color: P.gold }}>
               Outdoor Living — Mileage Tracker
             </p>
           </div>
@@ -1264,13 +1394,13 @@ export default function App() {
                   padding: 10,
                   borderRadius: 8,
                   border: "none",
-                  background: mode === m ? "#fff" : "transparent",
+                  background: mode === m ? P.gCard : "transparent",
                   color: mode === m ? P.txt : P.lt,
                   fontSize: 14,
                   fontWeight: 600,
                   cursor: "pointer",
                   fontFamily: Ft.b,
-                  boxShadow: mode === m ? "0 1px 3px rgba(0,0,0,.1)" : "none"
+                  boxShadow: mode === m ? P.sh1 : "none"
                 }}
               >
                 {m === "login" ? "Log In" : "Sign Up"}
@@ -1384,9 +1514,10 @@ export default function App() {
   if (!loaded)
     return (
       <div
+        className="mp-paper"
         style={{
           minHeight: "100vh",
-          background: P.bg,
+          background: P.gPaper,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -1395,41 +1526,48 @@ export default function App() {
         }}
       >
         <style>{css}</style>
-        Loading...
+        <div className="mp-shimmer" style={{ width: 180, height: 14 }} />
       </div>
     );
 
   return (
     <div
+      className="mp-paper"
       style={{
         minHeight: "100vh",
-        background: P.bg,
+        background: P.gPaper,
         fontFamily: Ft.b,
         paddingBottom: 80
       }}
     >
       <style>{css}</style>
       <div
+        className="mp-bar"
         style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 950,
           padding: "14px 16px",
-          background: "#fff",
-          borderBottom: `1px solid ${P.bdr}`,
-          borderTop: `3px solid ${P.tan}`,
+          background: P.gInkBar,
+          borderBottom: `1px solid ${P.inkBdr}`,
+          boxShadow: P.shBar,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between"
         }}
       >
-        <Logo />
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: P.gStripe }} />
+        <Logo dark />
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12, color: P.lt, fontFamily: Ft.m }}>
+          <span style={{ fontSize: 12, color: P.onInkMid, fontFamily: Ft.m }}>
             {user.name}
           </span>
           {isA && (
             <span
+              className="mp-badge"
               style={{
-                background: P.rBg,
-                color: P.red,
+                background: "rgba(196,30,42,.18)",
+                color: P.redOnInk,
                 fontSize: 9,
                 fontWeight: 700,
                 padding: "2px 6px",
@@ -1447,11 +1585,12 @@ export default function App() {
               setAP("");
               setAdPg("hub");
             }}
+            className="mp-focusable"
             style={{
-              background: P.tBg,
-              border: "none",
+              background: "rgba(255,255,255,.08)",
+              border: `1px solid ${P.inkBdr}`,
               cursor: "pointer",
-              color: P.mid,
+              color: P.onInkMid,
               padding: "6px 10px",
               borderRadius: 8,
               fontSize: 11,
@@ -1499,12 +1638,14 @@ export default function App() {
               }}
             >
               <div
+                className="mp-kpi mp-card"
                 style={{
-                  background: "#fff",
+                  background: P.gCard,
                   borderRadius: 12,
                   padding: "12px 14px",
                   border: `1px solid ${P.bdr}`,
-                  borderLeft: `3px solid ${P.tan}`
+                  borderLeft: `4px solid ${P.tan}`,
+                  boxShadow: P.sh2
                 }}
               >
                 <div
@@ -1518,18 +1659,20 @@ export default function App() {
                 >
                   Today
                 </div>
-                <div style={{ fontSize: 20, fontWeight: 700, fontFamily: Ft.h }}>
+                <div className="mp-num mp-display" style={{ fontSize: 24, fontWeight: 700 }}>
                   {todayMiles.toFixed(1)}
                   <span style={{ fontSize: 11, color: P.mid }}> mi</span>
                 </div>
               </div>
               <div
+                className="mp-kpi mp-card"
                 style={{
-                  background: "#fff",
+                  background: P.gCard,
                   borderRadius: 12,
                   padding: "12px 14px",
                   border: `1px solid ${P.bdr}`,
-                  borderLeft: `3px solid ${P.red}`
+                  borderLeft: `4px solid ${P.red}`,
+                  boxShadow: P.sh2
                 }}
               >
                 <div
@@ -1543,18 +1686,20 @@ export default function App() {
                 >
                   Pay Period
                 </div>
-                <div style={{ fontSize: 20, fontWeight: 700, fontFamily: Ft.h }}>
+                <div className="mp-num mp-display" style={{ fontSize: 24, fontWeight: 700, color: P.red }}>
                   {ppMiles.toFixed(1)}
                   <span style={{ fontSize: 11, color: P.mid }}> mi</span>
                 </div>
               </div>
               <div
+                className="mp-kpi mp-card"
                 style={{
-                  background: "#fff",
+                  background: P.gCard,
                   borderRadius: 12,
                   padding: "12px 14px",
                   border: `1px solid ${P.bdr}`,
-                  borderLeft: `3px solid ${P.blk}`
+                  borderLeft: `4px solid ${P.blk}`,
+                  boxShadow: P.sh2
                 }}
               >
                 <div
@@ -1568,7 +1713,7 @@ export default function App() {
                 >
                   YTD
                 </div>
-                <div style={{ fontSize: 20, fontWeight: 700, fontFamily: Ft.h }}>
+                <div className="mp-num mp-display" style={{ fontSize: 24, fontWeight: 700 }}>
                   {ytdMiles.toFixed(1)}
                   <span style={{ fontSize: 11, color: P.mid }}> mi</span>
                 </div>
