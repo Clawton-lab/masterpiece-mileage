@@ -137,7 +137,7 @@ const P = {
   bdrL: "#f1eae0",
   txt:  "#1a1512",
   mid:  "#6b6058",
-  lt:   "#a59a8c",
+  lt:   "#857b6e",
   red:  "#c41e2a",
   rBg:  "rgba(196,30,42,0.06)",
   tan:  "#c4b59a",
