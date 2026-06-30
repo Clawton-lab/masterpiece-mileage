@@ -94,6 +94,17 @@ async function authSignOut() {
   setSession(null);
 }
 
+async function authUpdatePassword(password) {
+  const r = await fetch(`${SB}/auth/v1/user`, {
+    method: "PUT",
+    headers: { apikey: ANON, Authorization: `Bearer ${_session?.access_token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ password })
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error_description || d.msg || d.message || "Couldn't update password.");
+  return d;
+}
+
 async function geocode(address) {
   console.log("Geocoding address:", address);
   
@@ -574,6 +585,11 @@ export default function App() {
   const [aPin, setAP] = useState("");
   const [aEmail, setAE] = useState("");
   const [aPass, setAPass] = useState("");
+  const [pwMod, setPwMod] = useState(false);
+  const [newPw, setNewPw] = useState("");
+  const [newPw2, setNewPw2] = useState("");
+  const [pwErr, setPwErr] = useState("");
+  const [pwSaving, setPwSaving] = useState(false);
   const [aErr, setAErr] = useState("");
   const [projs, setProjs] = useState([]);
   const [trips, setTrips] = useState([]);
@@ -741,6 +757,21 @@ export default function App() {
     } catch (e) {
       setAErr(e.message || "Sign up failed.");
     }
+  };
+
+  const changePassword = async () => {
+    setPwErr("");
+    if (newPw.length < 8) { setPwErr("Password must be at least 8 characters."); return; }
+    if (newPw !== newPw2) { setPwErr("Passwords don't match."); return; }
+    setPwSaving(true);
+    try {
+      await authUpdatePassword(newPw);
+      setPwMod(false); setNewPw(""); setNewPw2("");
+      show("Password updated ✓");
+    } catch (e) {
+      setPwErr(e.message || "Couldn't update password.");
+    }
+    setPwSaving(false);
   };
 
   const logTrip = async () => {
@@ -1647,6 +1678,25 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
               {RLBL[user.role]}
             </span>
           )}
+          <button
+            onClick={() => setPwMod(true)}
+            className="mp-focusable"
+            aria-label="Change password"
+            title="Change password"
+            style={{
+              background: "rgba(255,255,255,.08)",
+              border: `1px solid ${P.inkBdr}`,
+              cursor: "pointer",
+              color: P.onInkMid,
+              padding: "6px 9px",
+              borderRadius: 8,
+              fontSize: 12,
+              fontFamily: Ft.m,
+              fontWeight: 600
+            }}
+          >
+            🔑
+          </button>
           <button
             onClick={() => {
               authSignOut();
@@ -3228,6 +3278,17 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
         <Btn full disabled={!emailTo.trim()} onClick={emailReport}>
           Send Email
         </Btn>
+      </Modal>
+
+      <Modal open={pwMod} onClose={() => { setPwMod(false); setNewPw(""); setNewPw2(""); setPwErr(""); }} title="Change Password">
+        <Fl label="New Password">
+          <input style={iS} type="password" value={newPw} onChange={e => setNewPw(e.target.value)} placeholder="At least 8 characters" />
+        </Fl>
+        <Fl label="Confirm New Password">
+          <input style={iS} type="password" value={newPw2} onChange={e => setNewPw2(e.target.value)} placeholder="Re-enter new password" onKeyDown={e => { if (e.key === "Enter") changePassword(); }} />
+        </Fl>
+        {pwErr && <div style={{ color: P.red, fontSize: 13, marginBottom: 12, fontFamily: Ft.m }}>{pwErr}</div>}
+        <Btn full disabled={pwSaving} onClick={changePassword}>{pwSaving ? "Saving..." : "Update Password"}</Btn>
       </Modal>
 
       <Modal open={shareMod} onClose={() => setShareMod(false)} title="Share App">
