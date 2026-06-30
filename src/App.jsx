@@ -3,20 +3,95 @@ import { metersToMiles, reimbursement } from "./engines/money.js";
 import { getPayPeriod } from "./engines/payPeriod.js";
 import { fmtDate, fmtDateFull, today, thisYear } from "./engines/dates.js";
 
-const SB = "https://lvhqfslhcpiwshgvrnlp.supabase.co";
-const KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2aHFmc2xoY3Bpd3NoZ3ZybmxwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NjU5MTMsImV4cCI6MjA5MTM0MTkxM30.2KDKoJeGpiKs_7lZwxW8TAcldvzM3WhimJfQYxyZ_c0";
-const H = {
-  apikey: KEY,
-  Authorization: `Bearer ${KEY}`,
-  "Content-Type": "application/json",
-  Prefer: "return=representation"
-};
+// Supabase connection — configurable via env so we can point at a local copy
+// for safe testing; falls back to production. (The anon key is public by
+// design; real protection is the per-user login + Row-Level Security.)
+const SB = import.meta.env.VITE_SUPABASE_URL || "https://lvhqfslhcpiwshgvrnlp.supabase.co";
+const ANON = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx2aHFmc2xoY3Bpd3NoZ3ZybmxwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3NjU5MTMsImV4cCI6MjA5MTM0MTkxM30.2KDKoJeGpiKs_7lZwxW8TAcldvzM3WhimJfQYxyZ_c0";
 
-async function api(path, opts = {}) {
-  const r = await fetch(`${SB}/rest/v1/${path}`, { headers: H, ...opts });
+// ---- Session (real per-user auth token, persisted across reloads) ----
+const SESSION_KEY = "mp_session";
+let _session = (() => { try { return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); } catch { return null; } })();
+function setSession(s) {
+  _session = s;
+  try { s ? localStorage.setItem(SESSION_KEY, JSON.stringify(s)) : localStorage.removeItem(SESSION_KEY); } catch {}
+}
+function getSession() { return _session; }
+
+async function refreshSession() {
+  if (!_session?.refresh_token) return false;
+  try {
+    const r = await fetch(`${SB}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST", headers: { apikey: ANON, "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: _session.refresh_token })
+    });
+    if (!r.ok) { setSession(null); return false; }
+    const d = await r.json();
+    setSession({ access_token: d.access_token, refresh_token: d.refresh_token });
+    return true;
+  } catch { return false; }
+}
+
+// Data calls now carry the logged-in user's token (not the shared key).
+async function api(path, opts = {}, _retry = true) {
+  const token = _session?.access_token || ANON;
+  const r = await fetch(`${SB}/rest/v1/${path}`, {
+    ...opts,
+    headers: {
+      apikey: ANON,
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      Prefer: "return=representation",
+      ...(opts.headers || {})
+    }
+  });
+  if (r.status === 401 && _retry && _session?.refresh_token) {
+    if (await refreshSession()) return api(path, opts, false);
+  }
   const txt = await r.text();
   if (!r.ok) throw new Error(`${r.status}: ${txt}`);
   return txt ? JSON.parse(txt) : [];
+}
+
+// ---- Auth helpers (Supabase Auth: email + password) ----
+async function authPassword(email, password) {
+  const r = await fetch(`${SB}/auth/v1/token?grant_type=password`, {
+    method: "POST", headers: { apikey: ANON, "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password })
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error_description || d.msg || d.message || "Invalid email or password.");
+  setSession({ access_token: d.access_token, refresh_token: d.refresh_token });
+  return d.user;
+}
+
+async function authSignUp(email, password, name) {
+  const r = await fetch(`${SB}/auth/v1/signup`, {
+    method: "POST", headers: { apikey: ANON, "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, data: { name } })
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error_description || d.msg || d.message || "Sign up failed.");
+  if (d.access_token) setSession({ access_token: d.access_token, refresh_token: d.refresh_token });
+  return d;
+}
+
+async function authGetUser() {
+  if (!_session?.access_token) return null;
+  try {
+    const r = await fetch(`${SB}/auth/v1/user`, { headers: { apikey: ANON, Authorization: `Bearer ${_session.access_token}` } });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+
+async function authSignOut() {
+  try {
+    if (_session?.access_token) {
+      await fetch(`${SB}/auth/v1/logout`, { method: "POST", headers: { apikey: ANON, Authorization: `Bearer ${_session.access_token}` } });
+    }
+  } catch {}
+  setSession(null);
 }
 
 async function geocode(address) {
@@ -498,6 +573,7 @@ export default function App() {
   const [aName, setAN] = useState("");
   const [aPin, setAP] = useState("");
   const [aEmail, setAE] = useState("");
+  const [aPass, setAPass] = useState("");
   const [aErr, setAErr] = useState("");
   const [projs, setProjs] = useState([]);
   const [trips, setTrips] = useState([]);
@@ -605,57 +681,65 @@ export default function App() {
     return () => clearInterval(i);
   }, [user, load]);
 
+  // Restore an existing session on load (stay logged in across refreshes).
+  useEffect(() => {
+    (async () => {
+      if (!getSession()?.access_token) return;
+      const au = await authGetUser();
+      if (!au) { setSession(null); return; }
+      try {
+        const prof = await api(`yard_users?id=eq.${au.id}&limit=1`);
+        if (prof && prof[0] && prof[0].active !== false) setUser(prof[0]);
+        else setSession(null);
+      } catch { setSession(null); }
+    })();
+  }, []);
+
   const login = async () => {
     setAErr("");
-    if (!aName.trim() || aPin.length !== 4) {
-      setAErr("Enter name and 4-digit PIN.");
+    if (!aEmail.trim() || !aPass) {
+      setAErr("Enter your email and password.");
       return;
     }
     try {
-      const all = await api("yard_users?active=eq.true");
-      const found = all.find(
-        u => u.name.toLowerCase() === aName.trim().toLowerCase() && u.pin === aPin
-      );
-      if (!found) {
-        setAErr("Name or PIN not found.");
-        return;
-      }
-      setUser(found);
-      show(`Welcome back, ${found.name}!`);
+      const au = await authPassword(aEmail.trim().toLowerCase(), aPass);
+      const prof = await api(`yard_users?id=eq.${au.id}&limit=1`);
+      if (!prof || !prof[0]) { await authSignOut(); setAErr("No profile found for this account."); return; }
+      if (prof[0].active === false) { await authSignOut(); setAErr("This account is deactivated."); return; }
+      setUser(prof[0]);
+      setAPass("");
+      show(`Welcome back, ${prof[0].name}!`);
     } catch (e) {
-      setAErr("Connection error.");
+      setAErr(e.message || "Login failed.");
     }
   };
 
   const signup = async () => {
     setAErr("");
-    if (!aName.trim() || !aEmail.trim() || aPin.length !== 4) {
-      setAErr("Fill all fields.");
+    if (!aName.trim() || !aEmail.trim() || aPass.length < 8) {
+      setAErr("Fill all fields. Password must be at least 8 characters.");
       return;
     }
     try {
-      const ex = await api(
-        `yard_users?email=eq.${encodeURIComponent(aEmail.toLowerCase().trim())}`
-      );
-      if (ex && ex.length > 0) {
-        setAErr("Email registered. Log in.");
+      const d = await authSignUp(aEmail.trim().toLowerCase(), aPass, aName.trim());
+      if (!getSession()?.access_token) {
+        // Email confirmation required — no session yet.
+        setAErr("Account created. Check your email to confirm, then log in.");
+        setMode("login");
         return;
       }
-      const res = await api("yard_users", {
-        method: "POST",
-        body: JSON.stringify({
-          email: aEmail.toLowerCase().trim(),
-          name: aName.trim(),
-          pin: aPin,
-          role: "user"
-        })
-      });
-      if (res && res[0]) {
-        setUser(res[0]);
-        show(`Welcome, ${res[0].name}!`);
+      const au = d.user || (await authGetUser());
+      const prof = au ? await api(`yard_users?id=eq.${au.id}&limit=1`) : [];
+      if (prof && prof[0]) {
+        setUser(prof[0]);
+        setAPass("");
+        show(`Welcome, ${prof[0].name}!`);
+      } else {
+        setAErr("Account created — please log in.");
+        setMode("login");
       }
     } catch (e) {
-      setAErr("Signup failed.");
+      setAErr(e.message || "Sign up failed.");
     }
   };
 
@@ -1424,19 +1508,14 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                   placeholder="you@email.com"
                 />
               </Fl>
-              <Fl label="Create 4-digit PIN">
+              <Fl label="Create Password">
                 <input
-                  style={{
-                    ...iS,
-                    textAlign: "center",
-                    fontSize: 24,
-                    letterSpacing: 12,
-                    fontFamily: Ft.m
-                  }}
-                  maxLength={4}
-                  value={aPin}
-                  onChange={e => setAP(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                  placeholder="• • • •"
+                  style={iS}
+                  type="password"
+                  value={aPass}
+                  onChange={e => setAPass(e.target.value)}
+                  placeholder="At least 8 characters"
+                  onKeyDown={e => { if (e.key === "Enter") signup(); }}
                 />
               </Fl>
               {aErr && (
@@ -1458,34 +1537,25 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
           )}
           {mode === "login" && (
             <>
-              <Fl label="Your Name">
+              <Fl label="Email">
                 <input
                   style={iS}
-                  value={aName}
-                  onChange={e => setAN(e.target.value)}
-                  placeholder="e.g. Stephen"
-                  onKeyDown={e => {
-                    if (e.key === "Enter") document.getElementById("pin")?.focus();
-                  }}
+                  type="email"
+                  value={aEmail}
+                  onChange={e => setAE(e.target.value)}
+                  placeholder="you@email.com"
+                  onKeyDown={e => { if (e.key === "Enter") document.getElementById("pw")?.focus(); }}
                 />
               </Fl>
-              <Fl label="4-digit PIN">
+              <Fl label="Password">
                 <input
-                  id="pin"
-                  style={{
-                    ...iS,
-                    textAlign: "center",
-                    fontSize: 24,
-                    letterSpacing: 12,
-                    fontFamily: Ft.m
-                  }}
-                  maxLength={4}
-                  value={aPin}
-                  onChange={e => setAP(e.target.value.replace(/\D/g, "").slice(0, 4))}
-                  placeholder="• • • •"
-                  onKeyDown={e => {
-                    if (e.key === "Enter" && aPin.length === 4) login();
-                  }}
+                  id="pw"
+                  style={iS}
+                  type="password"
+                  value={aPass}
+                  onChange={e => setAPass(e.target.value)}
+                  placeholder="Your password"
+                  onKeyDown={e => { if (e.key === "Enter") login(); }}
                 />
               </Fl>
               {aErr && (
@@ -1579,9 +1649,11 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
           )}
           <button
             onClick={() => {
+              authSignOut();
               setUser(null);
               setAN("");
               setAP("");
+              setAPass("");
               setAdPg("hub");
             }}
             className="mp-focusable"
