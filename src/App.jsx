@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { metersToMiles, reimbursement } from "./engines/money.js";
 import { getPayPeriod } from "./engines/payPeriod.js";
 import { fmtDate, fmtDateFull, today, thisYear } from "./engines/dates.js";
@@ -588,10 +588,10 @@ function Toast({ m, s }) {
   );
 }
 
-function Nav({ tab, set, admin, pendingCount }) {
-  // Profile is intentionally not a tab here — it lives only behind the
-  // name pill in the header, one tap away, so it doesn't compete for
-  // room with the core work tabs.
+function Nav({ tab, set, admin }) {
+  // Profile and Admin are intentionally not tabs here — both live behind
+  // the name-menu dropdown in the header, so the bottom nav stays focused
+  // on the core work tabs everyone uses every day.
   const ts = [
     { k: "log", l: "Log Trip" },
     { k: "receipts", l: "Receipts" },
@@ -600,7 +600,6 @@ function Nav({ tab, set, admin, pendingCount }) {
   ];
   if (admin) {
     ts.push({ k: "reports", l: "Reports" });
-    ts.push({ k: "admin", l: "Admin" });
   }
 
   return (
@@ -649,30 +648,6 @@ function Nav({ tab, set, admin, pendingCount }) {
           <span style={{ maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {t.l}
           </span>
-          {t.k === "admin" && pendingCount > 0 && (
-            <span
-              style={{
-                position: "absolute",
-                top: 4,
-                right: 4,
-                minWidth: 15,
-                height: 15,
-                padding: "0 3px",
-                borderRadius: 999,
-                background: tab === t.k ? "#fff" : P.gRed,
-                color: tab === t.k ? P.red : "#fff",
-                fontSize: 9,
-                fontWeight: 700,
-                fontFamily: Ft.m,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                boxShadow: "0 1px 4px rgba(196,30,42,.4)"
-              }}
-            >
-              {pendingCount}
-            </span>
-          )}
         </button>
       ))}
     </nav>
@@ -687,6 +662,8 @@ export default function App() {
   const [aEmail, setAE] = useState("");
   const [aPass, setAPass] = useState("");
   const [pwMod, setPwMod] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef(null);
   const [newPw, setNewPw] = useState("");
   const [newPw2, setNewPw2] = useState("");
   const [pwErr, setPwErr] = useState("");
@@ -821,6 +798,20 @@ export default function App() {
     if (pending.length > 0) setSgPopup(pending[0]);
     setSgPromptDone(true);
   }, [loaded, isA, suggestions, sgPromptDone]);
+
+  // Close the account dropdown on an outside click. A plain fixed-position
+  // backdrop won't work here: the header has backdrop-filter (for the
+  // frosted-glass look), which creates a new containing block for
+  // position:fixed descendants, so a backdrop nested inside it only covers
+  // the header's own box instead of the full screen.
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    const onDocClick = e => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) setUserMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [userMenuOpen]);
 
   // Restore an existing session on load (stay logged in across refreshes).
   useEffect(() => {
@@ -1717,6 +1708,9 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
 .mp-tab:active{transform:translateY(0)}
 
 .mp-badge{font-family:'IBM Plex Mono',monospace;font-weight:700;text-transform:uppercase;letter-spacing:.08em;border-radius:999px;display:inline-flex;align-items:center;gap:4px;line-height:1}
+
+.mp-menu-item{transition:background-color .12s ease}
+.mp-menu-item:hover{background:rgba(196,30,42,.05)}
 .mp-shimmer{background:linear-gradient(100deg,#efe8dc 30%,#f6f1e8 50%,#efe8dc 70%);background-size:220% 100%;animation:mpShimmer 1.4s ease-in-out infinite;border-radius:8px}
 .mp-display{font-family:'Bitter',serif;letter-spacing:-.012em;line-height:1.08}
 .mp-eyebrow{font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.13em;font-size:10px;font-weight:700;color:#8a6a33}
@@ -1950,19 +1944,20 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
       >
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: P.gStripe }} />
         <Logo dark />
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div ref={userMenuRef} style={{ position: "relative" }}>
           <button
-            onClick={() => setTab("profile")}
+            onClick={() => setUserMenuOpen(o => !o)}
             className="mp-focusable"
-            title="View your profile"
+            title="Account menu"
             style={{
+              position: "relative",
               display: "flex",
               alignItems: "center",
               gap: 7,
               background: "rgba(255,255,255,.08)",
               border: `1px solid ${P.inkBdr}`,
               borderRadius: 999,
-              padding: "3px 12px 3px 3px",
+              padding: "3px 10px 3px 3px",
               cursor: "pointer"
             }}
           >
@@ -1970,68 +1965,115 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
             <span style={{ fontSize: 12, color: P.onInkMid, fontFamily: Ft.m, fontWeight: 600 }}>
               {user.name}
             </span>
+            <span style={{ fontSize: 8, color: P.onInkMid }}>{userMenuOpen ? "▴" : "▾"}</span>
+            {isA && pendingSgCount > 0 && (
+              <span
+                style={{
+                  position: "absolute",
+                  top: -2,
+                  right: -2,
+                  width: 9,
+                  height: 9,
+                  borderRadius: "50%",
+                  background: P.gRed,
+                  boxShadow: `0 0 0 2px ${P.gInkBar}`
+                }}
+              />
+            )}
           </button>
-          {isA && (
-            <span
-              className="mp-badge"
-              style={{
-                background: "rgba(196,30,42,.18)",
-                color: P.redOnInk,
-                fontSize: 9,
-                fontWeight: 700,
-                padding: "2px 6px",
-                borderRadius: 4,
-                fontFamily: Ft.m
-              }}
-            >
-              {RLBL[user.role]}
-            </span>
+
+          {userMenuOpen && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 8px)",
+                  right: 0,
+                  zIndex: 998,
+                  minWidth: 215,
+                  background: P.gCard,
+                  borderRadius: 14,
+                  border: `1px solid ${P.bdr}`,
+                  boxShadow: P.sh3,
+                  overflow: "hidden",
+                  animation: "fadeIn .16s ease"
+                }}
+              >
+                <div style={{ padding: "12px 14px", borderBottom: `1px solid ${P.bdrL}` }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: P.txt, fontFamily: Ft.h }}>
+                    {user.name}
+                  </div>
+                  <div style={{ fontSize: 11, color: P.lt, fontFamily: Ft.m, marginTop: 1 }}>
+                    {user.email}
+                  </div>
+                  {isA && (
+                    <div
+                      style={{
+                        display: "inline-block",
+                        fontSize: 10,
+                        fontWeight: 700,
+                        fontFamily: Ft.m,
+                        textTransform: "uppercase",
+                        letterSpacing: ".06em",
+                        color: P.red,
+                        background: P.rBg,
+                        borderRadius: 5,
+                        padding: "2px 7px",
+                        marginTop: 6
+                      }}
+                    >
+                      {RLBL[user.role]}
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  onClick={() => { setTab("profile"); setUserMenuOpen(false); }}
+                  className="mp-menu-item"
+                  style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: Ft.b, color: P.txt }}
+                >
+                  👤 View Profile
+                </button>
+                <button
+                  onClick={() => { setPwMod(true); setUserMenuOpen(false); }}
+                  className="mp-menu-item"
+                  style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: Ft.b, color: P.txt }}
+                >
+                  🔑 Change Password
+                </button>
+                {isA && (
+                  <button
+                    onClick={() => { setTab("admin"); setAdPg("hub"); setUserMenuOpen(false); }}
+                    className="mp-menu-item"
+                    style={{ display: "flex", width: "100%", justifyContent: "space-between", alignItems: "center", textAlign: "left", padding: "10px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: Ft.b, color: P.txt }}
+                  >
+                    <span>🛠️ Admin</span>
+                    {pendingSgCount > 0 && (
+                      <span style={{ background: P.gRed, color: "#fff", fontSize: 10, fontWeight: 700, borderRadius: 999, padding: "1px 7px", fontFamily: Ft.m }}>
+                        {pendingSgCount}
+                      </span>
+                    )}
+                  </button>
+                )}
+                <div style={{ borderTop: `1px solid ${P.bdrL}` }} />
+                <button
+                  onClick={() => {
+                    authSignOut();
+                    setUser(null);
+                    setAN("");
+                    setAP("");
+                    setAPass("");
+                    setAdPg("hub");
+                    setSgPromptDone(false);
+                    setSgPopup(null);
+                    setUserMenuOpen(false);
+                  }}
+                  className="mp-menu-item"
+                  style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 13, fontWeight: 600, fontFamily: Ft.b, color: P.red }}
+                >
+                  🚪 Log Out
+                </button>
+              </div>
           )}
-          <button
-            onClick={() => setPwMod(true)}
-            className="mp-focusable"
-            aria-label="Change password"
-            title="Change password"
-            style={{
-              background: "rgba(255,255,255,.08)",
-              border: `1px solid ${P.inkBdr}`,
-              cursor: "pointer",
-              color: P.onInkMid,
-              padding: "6px 9px",
-              borderRadius: 8,
-              fontSize: 12,
-              fontFamily: Ft.m,
-              fontWeight: 600
-            }}
-          >
-            🔑
-          </button>
-          <button
-            onClick={() => {
-              authSignOut();
-              setUser(null);
-              setAN("");
-              setAP("");
-              setAPass("");
-              setAdPg("hub");
-              setSgPromptDone(false);
-              setSgPopup(null);
-            }}
-            className="mp-focusable"
-            style={{
-              background: "rgba(255,255,255,.08)",
-              border: `1px solid ${P.inkBdr}`,
-              cursor: "pointer",
-              color: P.onInkMid,
-              padding: "6px 10px",
-              borderRadius: 8,
-              fontSize: 11,
-              fontFamily: Ft.m,
-              fontWeight: 600
-            }}
-          >
-            Log Out
-          </button>
         </div>
       </div>
       <div style={{ padding: "16px 16px 0" }}>
@@ -4083,7 +4125,6 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
           if (t !== "admin") setAdPg("hub");
         }}
         admin={isA}
-        pendingCount={pendingSgCount}
       />
       <Toast m={toast.m} s={toast.s} />
     </div>
