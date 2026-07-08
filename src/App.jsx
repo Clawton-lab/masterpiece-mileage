@@ -648,7 +648,6 @@ export default function App() {
   const [editUser, setEU] = useState(null);
   const [euN, setEUN] = useState("");
   const [euE, setEUE] = useState("");
-  const [euP, setEUP] = useState("");
   const [delUserMod, setDUM] = useState(null);
   const [delTripMod, setDTM] = useState(null);
   const [emailMod, setEmailMod] = useState(false);
@@ -1167,18 +1166,17 @@ export default function App() {
   };
 
   const saveEU = async () => {
-    if (!euN.trim() || !euE.trim() || euP.length !== 4) {
-      show("Fill all fields");
+    if (!euN.trim()) {
+      show("Name is required");
       return;
     }
     try {
+      // Only the display name lives here. The login email + password are the
+      // employee's Supabase Auth identity — changed by them, not patched into
+      // the profile (patching profile email would desync it from the login).
       await api(`yard_users?id=eq.${editUser}`, {
         method: "PATCH",
-        body: JSON.stringify({
-          name: euN.trim(),
-          email: euE.toLowerCase().trim(),
-          pin: euP
-        })
+        body: JSON.stringify({ name: euN.trim() })
       });
       await load();
       setEU(null);
@@ -2880,7 +2878,6 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                                 setEU(u.id);
                                 setEUN(u.name);
                                 setEUE(u.email);
-                                setEUP(u.pin);
                               }}
                               style={{
                                 fontSize: 11,
@@ -3186,33 +3183,20 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
         <Fl label="Name">
           <input style={iS} value={euN} onChange={e => setEUN(e.target.value)} />
         </Fl>
-        <Fl label="Email">
+        <Fl label="Email (login)">
           <input
-            style={iS}
+            style={{ ...iS, background: P.bg, color: P.lt, cursor: "not-allowed" }}
             type="email"
             value={euE}
-            onChange={e => setEUE(e.target.value)}
+            readOnly
           />
         </Fl>
-        <Fl label="PIN">
-          <input
-            style={{
-              ...iS,
-              textAlign: "center",
-              fontSize: 20,
-              letterSpacing: 10,
-              fontFamily: Ft.m
-            }}
-            maxLength={4}
-            value={euP}
-            onChange={e => setEUP(e.target.value.replace(/\D/g, "").slice(0, 4))}
-          />
-        </Fl>
-        <Btn
-          full
-          disabled={!euN.trim() || !euE.trim() || euP.length !== 4}
-          onClick={saveEU}
-        >
+        <p style={{ fontSize: 11, color: P.lt, margin: "-6px 0 16px", fontFamily: Ft.m }}>
+          Login email & password are managed by the employee from their own
+          account (🔑 Change Password). Set their role and active status from the
+          employee list.
+        </p>
+        <Btn full disabled={!euN.trim()} onClick={saveEU}>
           Save
         </Btn>
       </Modal>
