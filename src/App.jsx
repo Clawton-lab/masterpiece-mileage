@@ -749,6 +749,16 @@ export default function App() {
   const [sgPromptDone, setSgPromptDone] = useState(false);
   const [sgDetail, setSgDetail] = useState(null);
   const [avUploading, setAvUploading] = useState(false);
+  // First-Time Setup: null = form; a string = "check your email" state,
+  // holding the address we sent the confirmation link to.
+  const [setupSentTo, setSetupSentTo] = useState(null);
+  // Set when the app boots from a Supabase password-recovery email link —
+  // shows the "set your real password" screen instead of the normal app.
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [recoveryPw, setRecoveryPw] = useState("");
+  const [recoveryPw2, setRecoveryPw2] = useState("");
+  const [recoveryErr, setRecoveryErr] = useState("");
+  const [recoverySaving, setRecoverySaving] = useState(false);
 
   const show = useCallback(m => {
     setToast({ m, s: true });
@@ -823,6 +833,24 @@ export default function App() {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [userMenuOpen]);
 
+  // Detect landing here from the emailed confirmation link. Supabase's
+  // /auth/v1/verify redirects back with the session in the URL fragment
+  // (#access_token=...&type=recovery&...) rather than a query string.
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (!hash || !hash.includes("type=recovery") || !hash.includes("access_token=")) return;
+    const params = new URLSearchParams(hash.slice(1));
+    const access_token = params.get("access_token");
+    const refresh_token = params.get("refresh_token");
+    if (access_token && refresh_token) {
+      setSession({ access_token, refresh_token });
+      setRecoveryMode(true);
+      // Scrub the tokens out of the URL/history so a page refresh (or
+      // anyone glancing at the address bar) doesn't expose them.
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+  }, []);
+
   // Restore an existing session on load (stay logged in across refreshes).
   useEffect(() => {
     (async () => {
@@ -856,41 +884,34 @@ export default function App() {
     }
   };
 
-  // First-time setup: an employee claims their existing profile with their
-  // current PIN and sets a password. Verified server-side (rpc/claim_account),
-  // then we log them straight in. No open sign-up — only known employees.
+  // First-Time Setup, step 1: verify the PIN, then Supabase emails a real,
+  // clickable confirmation link (via the setup-account Edge Function —
+  // needs the service role, so it can't happen in the browser). No password
+  // yet here; they set that after they've actually clicked the link
+  // (see the recovery-callback screen below).
   const setupAccount = async () => {
     setAErr("");
     const email = aEmail.trim().toLowerCase();
-    if (!email || !/^\d{4}$/.test(aPin) || aPass.length < 8) {
-      setAErr("Enter your work email, your current 4-digit PIN, and a password of at least 8 characters.");
+    if (!email || !/^\d{4}$/.test(aPin)) {
+      setAErr("Enter your work email and your current 4-digit PIN.");
       return;
     }
     setASaving(true);
     try {
-      const res = await api("rpc/claim_account", {
+      const r = await fetch(`${SB}/functions/v1/setup-account`, {
         method: "POST",
-        body: JSON.stringify({ p_email: email, p_pin: aPin, p_password: aPass })
-      });
-      const r = Array.isArray(res) ? res[0] : res;
+        headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ email, pin: aPin })
+      }).then(res => res.json());
       if (!r || !r.ok) {
         setAErr((r && r.error) || "Setup failed. Double-check your email and PIN.");
         setASaving(false);
         return;
       }
-      // Account is set — log in with the new password.
-      const au = await authPassword(email, aPass);
-      const prof = await api(`yard_users?id=eq.${au.id}&limit=1`);
-      if (prof && prof[0]) {
-        setUser(prof[0]);
-        setAPass(""); setAP("");
-        show(`Welcome, ${prof[0].name}! Your account is all set.`);
-      } else {
-        setMode("login");
-        show("Account set up — please log in.");
-      }
+      setSetupSentTo(email);
+      setAP("");
     } catch (e) {
-      setAErr(e.message || "Setup failed.");
+      setAErr("Setup failed. Please try again.");
     }
     setASaving(false);
   };
@@ -908,6 +929,34 @@ export default function App() {
       setPwErr(e.message || "Couldn't update password.");
     }
     setPwSaving(false);
+  };
+
+  // Step 2 of First-Time Setup: they clicked the real emailed link (proving
+  // the inbox is theirs) and are here on a live recovery session. Setting
+  // their password here is the actual account creation moment.
+  const finishRecoverySetup = async () => {
+    setRecoveryErr("");
+    if (recoveryPw.length < 8) { setRecoveryErr("Password must be at least 8 characters."); return; }
+    if (recoveryPw !== recoveryPw2) { setRecoveryErr("Passwords don't match."); return; }
+    setRecoverySaving(true);
+    try {
+      await authUpdatePassword(recoveryPw);
+      await api("rpc/mark_setup_complete", { method: "POST", body: "{}" });
+      const au = await authGetUser();
+      const prof = au ? await api(`yard_users?id=eq.${au.id}&limit=1`) : [];
+      setRecoveryMode(false);
+      setRecoveryPw(""); setRecoveryPw2("");
+      if (prof && prof[0]) {
+        setUser(prof[0]);
+        show(`Welcome, ${prof[0].name}! Your account is all set.`);
+      } else {
+        setMode("login");
+        show("Account set up — please log in.");
+      }
+    } catch (e) {
+      setRecoveryErr(e.message || "Couldn't finish setup.");
+    }
+    setRecoverySaving(false);
   };
 
   const logTrip = async () => {
@@ -1747,6 +1796,70 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
   .mp-stripe{background:#1a1512!important;height:1px!important}
 }`;
 
+  // Landed here from the emailed confirmation link. This IS the real
+  // verification moment — take priority over everything else, including
+  // the normal login screen, until they've set a password.
+  if (recoveryMode)
+    return (
+      <div
+        className="mp-paper"
+        style={{
+          minHeight: "100vh",
+          background: P.gPaper,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+          fontFamily: Ft.b
+        }}
+      >
+        <style>{css}</style>
+        <div style={{ width: "100%", maxWidth: 380, animation: "fadeIn .5s ease" }}>
+          <hr className="mp-stripe" style={{ marginBottom: 28, width: "100%" }} />
+          <div style={{ textAlign: "center", marginBottom: 32 }}>
+            <div style={{ display: "inline-flex" }}>
+              <Logo />
+            </div>
+            <p className="mp-eyebrow" style={{ textAlign: "center", marginTop: 12 }}>
+              Email Confirmed ✓
+            </p>
+          </div>
+          <div className="mp-glow" style={{ padding: "20px 18px 22px", "--ge": P.grn, "--gw": "rgba(31,122,69,.28)" }}>
+            <p style={{ fontSize: 13, color: P.mid, margin: "0 0 16px", lineHeight: 1.5 }}>
+              You're verified — last step. Create the password you'll use to log in from now on.
+            </p>
+            <Fl label="New Password">
+              <input
+                style={iS}
+                type="password"
+                value={recoveryPw}
+                onChange={e => setRecoveryPw(e.target.value)}
+                placeholder="At least 8 characters"
+              />
+            </Fl>
+            <Fl label="Confirm Password">
+              <input
+                style={iS}
+                type="password"
+                value={recoveryPw2}
+                onChange={e => setRecoveryPw2(e.target.value)}
+                placeholder="Re-enter your password"
+                onKeyDown={e => { if (e.key === "Enter") finishRecoverySetup(); }}
+              />
+            </Fl>
+            {recoveryErr && (
+              <div style={{ color: P.red, fontSize: 13, marginBottom: 12, fontFamily: Ft.m }}>
+                {recoveryErr}
+              </div>
+            )}
+            <Btn full color={P.grn} disabled={recoverySaving} onClick={finishRecoverySetup}>
+              {recoverySaving ? "Finishing..." : "Set Password & Finish Setup"}
+            </Btn>
+          </div>
+        </div>
+      </div>
+    );
+
   if (!user)
     return (
       <div
@@ -1806,7 +1919,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                 🔐 We've switched to secure login
               </div>
               <div style={{ fontSize: 12.5, color: P.mid, fontFamily: Ft.b, lineHeight: 1.5 }}>
-                PINs are gone — everyone now signs in with their work email and a password they create. First time back? Tap <strong>First-Time Setup</strong> below, confirm it's you with your email and your old PIN, then set your new password.
+                PINs are gone — everyone now signs in with their work email and a password they create. First time back? Tap <strong>First-Time Setup</strong> below, confirm it's you with your email and old PIN, then check your email for a link to finish setting your password.
               </div>
             </div>
           )}
@@ -1826,6 +1939,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                 onClick={() => {
                   setMode(m);
                   setAErr("");
+                  setSetupSentTo(null);
                 }}
                 style={{
                   flex: 1,
@@ -1849,11 +1963,29 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
             className="mp-glow"
             style={{ padding: "20px 18px 22px", "--ge": P.red, "--gw": "rgba(196,30,42,.32)" }}
           >
-          {mode === "setup" && (
+          {mode === "setup" && setupSentTo && (
+            <div style={{ textAlign: "center", padding: "8px 4px" }}>
+              <div style={{ fontSize: 32, marginBottom: 10 }}>📬</div>
+              <p style={{ fontSize: 14, fontWeight: 700, color: P.txt, margin: "0 0 8px", fontFamily: Ft.b }}>
+                Check your email
+              </p>
+              <p style={{ fontSize: 12.5, color: P.mid, margin: "0 0 18px", lineHeight: 1.5, fontFamily: Ft.b }}>
+                We sent a link to <strong>{setupSentTo}</strong>. Click it to confirm it's really you and set your password — that's the whole rest of setup. Not there in a minute? Check spam.
+              </p>
+              <button
+                onClick={() => { setSetupSentTo(null); setAErr(""); }}
+                style={{ background: "none", border: "none", color: P.red, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: Ft.b }}
+              >
+                Wrong email? Start over
+              </button>
+            </div>
+          )}
+          {mode === "setup" && !setupSentTo && (
             <>
               <p style={{ fontSize: 12.5, color: P.mid, margin: "0 0 16px", fontFamily: Ft.b, lineHeight: 1.5 }}>
                 First time here? Confirm it's you with your work email and your
-                current 4-digit PIN, then create a password you'll use from now on.
+                current 4-digit PIN. We'll email you a link to finish setting up
+                your password.
               </p>
               <Fl label="Work Email">
                 <input
@@ -1872,15 +2004,6 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                   value={aPin}
                   onChange={e => setAP(e.target.value.replace(/\D/g, "").slice(0, 4))}
                   placeholder="••••"
-                />
-              </Fl>
-              <Fl label="Create Password">
-                <input
-                  style={iS}
-                  type="password"
-                  value={aPass}
-                  onChange={e => setAPass(e.target.value)}
-                  placeholder="At least 8 characters"
                   onKeyDown={e => { if (e.key === "Enter") setupAccount(); }}
                 />
               </Fl>
@@ -1897,7 +2020,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                 </div>
               )}
               <Btn full disabled={aSaving} onClick={setupAccount}>
-                {aSaving ? "Setting up..." : "Set Up My Account"}
+                {aSaving ? "Sending..." : "Send Me a Setup Link"}
               </Btn>
             </>
           )}
