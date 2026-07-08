@@ -369,7 +369,7 @@ function Logo({ dark }) {
   );
 }
 
-function Modal({ open, onClose, title, children }) {
+function Modal({ open, onClose, title, children, accent }) {
   if (!open) return null;
   return (
     <div
@@ -405,6 +405,19 @@ function Modal({ open, onClose, title, children }) {
           animation: "mpRise .34s cubic-bezier(.16,1,.3,1)"
         }}
       >
+        {accent && (
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 5,
+              background: P.gRed,
+              borderRadius: "20px 20px 0 0"
+            }}
+          />
+        )}
         <div
           style={{
             width: 44,
@@ -542,12 +555,13 @@ function Toast({ m, s }) {
   );
 }
 
-function Nav({ tab, set, admin }) {
+function Nav({ tab, set, admin, pendingCount }) {
   const ts = [
     { k: "log", l: "Log Trip" },
     { k: "receipts", l: "Receipts" },
     { k: "trips", l: "My Trips" },
-    { k: "projects", l: "Projects" }
+    { k: "projects", l: "Projects" },
+    { k: "profile", l: "Profile" }
   ];
   if (admin) {
     ts.push({ k: "reports", l: "Reports" });
@@ -576,6 +590,7 @@ function Nav({ tab, set, admin }) {
           className="mp-tab"
           data-on={tab === t.k}
           style={{
+            position: "relative",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
@@ -594,6 +609,30 @@ function Nav({ tab, set, admin }) {
             whiteSpace: "nowrap"
           }}
         >
+          {t.k === "admin" && pendingCount > 0 && (
+            <span
+              style={{
+                position: "absolute",
+                top: -3,
+                right: 2,
+                minWidth: 15,
+                height: 15,
+                padding: "0 3px",
+                borderRadius: 999,
+                background: P.gRed,
+                color: "#fff",
+                fontSize: 9,
+                fontWeight: 700,
+                fontFamily: Ft.m,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 1px 4px rgba(196,30,42,.4)"
+              }}
+            >
+              {pendingCount}
+            </span>
+          )}
           {t.l}
         </button>
       ))}
@@ -676,6 +715,13 @@ export default function App() {
   const [rcProj, setRcProj] = useState("");
   const [editRc, setEditRc] = useState(null);
   const [delRcMod, setDelRcMod] = useState(null);
+  const [suggestions, setSuggestions] = useState([]);
+  const [sgType, setSgType] = useState("suggestion");
+  const [sgMsg, setSgMsg] = useState("");
+  const [sgSaving, setSgSaving] = useState(false);
+  const [sgPopup, setSgPopup] = useState(null);
+  const [sgPromptDone, setSgPromptDone] = useState(false);
+  const [sgDetail, setSgDetail] = useState(null);
 
   const show = useCallback(m => {
     setToast({ m, s: true });
@@ -687,17 +733,19 @@ export default function App() {
 
   const load = useCallback(async () => {
     try {
-      const [p, t, s, u, r] = await Promise.all([
+      const [p, t, s, u, r, sg] = await Promise.all([
         api("projects?order=name"),
         api("trips?order=created_at.desc"),
         api("mileage_settings?limit=1"),
         api("yard_users?order=name"),
-        api("receipts?order=receipt_date.desc")
+        api("receipts?order=receipt_date.desc"),
+        api("suggestions?order=created_at.desc")
       ]);
       setProjs(p);
       setTrips(t.map(x => ({ ...x, trip_date: typeof x.trip_date === "string" ? x.trip_date.slice(0, 10) : x.trip_date })));
       setUsr(u);
       setReceipts(r.map(x => ({ ...x, receipt_date: typeof x.receipt_date === "string" ? x.receipt_date.slice(0, 10) : x.receipt_date })));
+      setSuggestions(sg);
       if (s && s.length > 0) {
         setSettings(s[0]);
         setSettingsRate(s[0].irs_rate.toString());
@@ -720,6 +768,19 @@ export default function App() {
     const i = setInterval(load, 15000);
     return () => clearInterval(i);
   }, [user, load]);
+
+  // Once per login, if there's an uncleared suggestion/bug report and this
+  // user is admin-tier, surface it as a heads-up popup. Latched by
+  // sgPromptDone so it doesn't re-open every 15s poll refresh — after that,
+  // clearing one explicitly chains to the next pending item (see clearSuggestion).
+  useEffect(() => {
+    if (!loaded || !isA || sgPromptDone) return;
+    const pending = suggestions
+      .filter(s => !s.cleared_at)
+      .sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
+    if (pending.length > 0) setSgPopup(pending[0]);
+    setSgPromptDone(true);
+  }, [loaded, isA, suggestions, sgPromptDone]);
 
   // Restore an existing session on load (stay logged in across refreshes).
   useEffect(() => {
@@ -1051,6 +1112,77 @@ export default function App() {
     w.document.close();
   };
 
+  const submitSuggestion = async () => {
+    if (!sgMsg.trim()) {
+      show("Enter a message first");
+      return;
+    }
+    setSgSaving(true);
+    try {
+      await api("suggestions", {
+        method: "POST",
+        body: JSON.stringify({
+          user_id: user.id,
+          user_name: user.name,
+          type: sgType,
+          message: sgMsg.trim()
+        })
+      });
+      setSgMsg("");
+      await load();
+      show("Sent to the admin team — thanks!");
+    } catch (e) {
+      show("Error sending — try again");
+    }
+    setSgSaving(false);
+  };
+
+  // "Clear" = an admin has seen it (records who/when); resolving happens
+  // separately in the Admin > Suggestions hub. After clearing, chain straight
+  // to the next pending item so nothing gets missed in one sitting.
+  const clearSuggestion = async id => {
+    try {
+      await api(`suggestions?id=eq.${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          cleared_by: user.id,
+          cleared_by_name: user.name,
+          cleared_at: new Date().toISOString()
+        })
+      });
+      const refreshed = await api("suggestions?order=created_at.desc");
+      setSuggestions(refreshed);
+      setSgPopup(null);
+      setSgDetail(d => (d && d.id === id ? refreshed.find(s => s.id === id) || null : d));
+      const next = refreshed
+        .filter(s => !s.cleared_at && s.id !== id)
+        .sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
+      if (next.length > 0) setTimeout(() => setSgPopup(next[0]), 260);
+    } catch (e) {
+      show("Error clearing");
+    }
+  };
+
+  const resolveSuggestion = async (id, resolved) => {
+    try {
+      await api(`suggestions?id=eq.${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          resolved,
+          resolved_at: resolved ? new Date().toISOString() : null,
+          resolved_by: resolved ? user.id : null,
+          resolved_by_name: resolved ? user.name : null
+        })
+      });
+      const refreshed = await api("suggestions?order=created_at.desc");
+      setSuggestions(refreshed);
+      setSgDetail(d => (d && d.id === id ? refreshed.find(s => s.id === id) || null : d));
+      show(resolved ? "Marked complete" : "Marked not complete");
+    } catch (e) {
+      show("Error updating");
+    }
+  };
+
   const saveProj = async () => {
     if (!nPN.trim() || !nPA.trim()) {
       show("Need name and address");
@@ -1345,6 +1477,10 @@ export default function App() {
     return acc;
   }, {});
   const myReceipts = receipts.filter(r => r.user_id === user?.id);
+  const mySuggestions = suggestions
+    .filter(s => s.user_id === user?.id)
+    .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+  const pendingSgCount = suggestions.filter(s => !s.cleared_at).length;
 
   const exportCSV = () => {
     const rows = [
@@ -1793,6 +1929,8 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
               setAP("");
               setAPass("");
               setAdPg("hub");
+              setSgPromptDone(false);
+              setSgPopup(null);
             }}
             className="mp-focusable"
             style={{
@@ -2424,6 +2562,130 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
           </div>
         )}
 
+        {tab === "profile" && (
+          <div style={{ animation: "fadeIn .3s ease" }}>
+            <h2 style={{ fontFamily: Ft.h, fontSize: 20, fontWeight: 700, margin: "0 0 16px" }}>
+              Profile
+            </h2>
+            <div className="mp-card" style={{ background: P.gCard, border: `1px solid ${P.bdr}`, borderRadius: 14, padding: 16, marginBottom: 24 }}>
+              <div style={{ fontSize: 17, fontWeight: 700, color: P.txt, fontFamily: Ft.h }}>
+                {user.name}
+              </div>
+              <div style={{ fontSize: 12.5, color: P.lt, fontFamily: Ft.m, marginTop: 2 }}>
+                {user.email}
+              </div>
+              <div
+                style={{
+                  display: "inline-block",
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  fontFamily: Ft.m,
+                  textTransform: "uppercase",
+                  letterSpacing: ".06em",
+                  color: P.red,
+                  background: P.rBg,
+                  borderRadius: 6,
+                  padding: "3px 9px",
+                  marginTop: 9
+                }}
+              >
+                {RLBL[user.role]}
+              </div>
+            </div>
+
+            <h3 style={{ fontFamily: Ft.h, fontSize: 16, fontWeight: 700, margin: "0 0 4px" }}>
+              Suggestions &amp; Bug Reports
+            </h3>
+            <p style={{ fontSize: 12.5, color: P.lt, fontFamily: Ft.b, margin: "0 0 14px", lineHeight: 1.5 }}>
+              Spot a bug or have an idea to make this app better? Send it straight to the admin team.
+            </p>
+            <div className="mp-card" style={{ background: P.gCard, border: `1px solid ${P.bdr}`, borderRadius: 14, padding: 16, marginBottom: 24 }}>
+              <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                {[{ k: "suggestion", l: "💡 Suggestion" }, { k: "bug", l: "🐞 Bug / Issue" }].map(o => (
+                  <button
+                    key={o.k}
+                    onClick={() => setSgType(o.k)}
+                    style={{
+                      flex: 1,
+                      padding: "9px 10px",
+                      borderRadius: 9,
+                      cursor: "pointer",
+                      fontFamily: Ft.b,
+                      fontWeight: 700,
+                      fontSize: 13,
+                      border: sgType === o.k ? `1.5px solid ${P.red}` : `1.5px solid ${P.bdr}`,
+                      background: sgType === o.k ? P.rBg : P.gCard,
+                      color: sgType === o.k ? P.red : P.mid
+                    }}
+                  >
+                    {o.l}
+                  </button>
+                ))}
+              </div>
+              <textarea
+                value={sgMsg}
+                onChange={e => setSgMsg(e.target.value)}
+                placeholder={sgType === "bug" ? "What happened? What did you expect instead?" : "What would make this app better for you?"}
+                rows={4}
+                maxLength={2000}
+                style={{ ...iS, resize: "vertical", fontFamily: Ft.b }}
+              />
+              <div style={{ marginTop: 12 }}>
+                <Btn full disabled={!sgMsg.trim() || sgSaving} onClick={submitSuggestion}>
+                  {sgSaving ? "Sending..." : "Send to Admin"}
+                </Btn>
+              </div>
+            </div>
+
+            {mySuggestions.length > 0 && (
+              <>
+                <h3 style={{ fontFamily: Ft.h, fontSize: 16, fontWeight: 700, margin: "0 0 10px" }}>
+                  Your Submissions
+                </h3>
+                {mySuggestions.map(s => (
+                  <div
+                    key={s.id}
+                    className="mp-card"
+                    style={{
+                      background: P.gCard,
+                      border: `1px solid ${P.bdr}`,
+                      borderRadius: 12,
+                      padding: "12px 14px",
+                      marginBottom: 8,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 10
+                    }}
+                  >
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 13.5, color: P.txt, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {s.type === "bug" ? "🐞 " : "💡 "}{s.message}
+                      </div>
+                      <div style={{ fontSize: 11, color: P.lt, fontFamily: Ft.m, marginTop: 2 }}>
+                        {fmtDateFull((s.created_at || "").slice(0, 10))}
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        fontFamily: Ft.m,
+                        textTransform: "uppercase",
+                        letterSpacing: ".04em",
+                        flexShrink: 0,
+                        color: s.resolved ? P.grn : s.cleared_at ? P.amb : P.lt
+                      }}
+                    >
+                      {s.resolved ? "Resolved" : s.cleared_at ? "Reviewing" : "Submitted"}
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+
         {tab === "reports" && isA && (
           <div style={{ animation: "fadeIn .3s ease" }}>
             <>
@@ -2847,6 +3109,12 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                     c: P.red
                   },
                   {
+                    k: "suggestions",
+                    l: "Suggestions & Bugs",
+                    d: pendingSgCount > 0 ? `${pendingSgCount} new — needs review` : "Review feedback from the team",
+                    c: P.red
+                  },
+                  {
                     k: "settings",
                     l: "Settings",
                     d: "IRS rate & pay periods",
@@ -3033,6 +3301,91 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {adPg === "suggestions" && (
+              <div>
+                <button
+                  onClick={() => setAdPg("hub")}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    color: P.red,
+                    fontSize: 14,
+                    fontWeight: 600,
+                    marginBottom: 16,
+                    fontFamily: Ft.b
+                  }}
+                >
+                  ← Admin
+                </button>
+                <h2 style={{ fontFamily: Ft.h, fontSize: 20, fontWeight: 700, margin: "0 0 16px" }}>
+                  Suggestions &amp; Bug Reports
+                </h2>
+                {suggestions.length === 0 && (
+                  <div style={{ padding: 40, textAlign: "center", color: P.lt, fontFamily: Ft.m }}>
+                    Nothing submitted yet
+                  </div>
+                )}
+                {suggestions
+                  .slice()
+                  .sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""))
+                  .map(s => (
+                    <button
+                      key={s.id}
+                      onClick={() => setSgDetail(s)}
+                      className="mp-glow"
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "14px 16px",
+                        marginBottom: 10,
+                        cursor: "pointer",
+                        fontFamily: Ft.b,
+                        "--ge": s.type === "bug" ? P.red : P.tan,
+                        "--gw": "rgba(58,42,28,.16)"
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 700,
+                                fontFamily: Ft.m,
+                                textTransform: "uppercase",
+                                letterSpacing: ".06em",
+                                padding: "2px 8px",
+                                borderRadius: 999,
+                                background: s.type === "bug" ? P.rBg : P.tBg,
+                                color: s.type === "bug" ? P.red : P.tanDeep
+                              }}
+                            >
+                              {s.type === "bug" ? "🐞 Bug" : "💡 Suggestion"}
+                            </span>
+                            {!s.cleared_at && (
+                              <span style={{ fontSize: 10, fontWeight: 700, fontFamily: Ft.m, color: P.red }}>
+                                NEW
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: P.txt, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {s.message}
+                          </div>
+                          <div style={{ fontSize: 11, color: P.lt, fontFamily: Ft.m, marginTop: 3 }}>
+                            {s.user_name} · {fmtDateFull((s.created_at || "").slice(0, 10))}
+                          </div>
+                        </div>
+                        <div style={{ flexShrink: 0, fontSize: 11, fontFamily: Ft.m, fontWeight: 700, color: s.resolved ? P.grn : P.amb }}>
+                          {s.resolved ? "✓ Resolved" : "Open"}
+                        </div>
+                      </div>
+                    </button>
+                  ))}
               </div>
             )}
 
@@ -3502,6 +3855,111 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
         </div>
       </Modal>
 
+      <Modal
+        open={!!sgPopup}
+        onClose={() => setSgPopup(null)}
+        accent
+        title={sgPopup?.type === "bug" ? "🐞 Bug Report Waiting" : "💡 New Suggestion"}
+      >
+        {sgPopup && (
+          <>
+            <div
+              style={{
+                fontSize: 15,
+                color: P.txt,
+                lineHeight: 1.5,
+                marginBottom: 14,
+                background: P.bg,
+                borderRadius: 10,
+                padding: "12px 14px",
+                border: `1px solid ${P.bdrL}`
+              }}
+            >
+              {sgPopup.message}
+            </div>
+            <div style={{ fontSize: 12, color: P.lt, fontFamily: Ft.m, marginBottom: 20 }}>
+              From {sgPopup.user_name} · {fmtDateFull((sgPopup.created_at || "").slice(0, 10))}
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={() => setSgPopup(null)}
+                style={{ flex: 1, padding: 12, borderRadius: 10, border: `1.5px solid ${P.bdr}`, background: P.gCard, color: P.mid, fontWeight: 600, cursor: "pointer" }}
+              >
+                Later
+              </button>
+              <Btn full sx={{ flex: 1 }} onClick={() => clearSuggestion(sgPopup.id)}>
+                Clear — I've Seen This
+              </Btn>
+            </div>
+          </>
+        )}
+      </Modal>
+
+      <Modal
+        open={!!sgDetail}
+        onClose={() => setSgDetail(null)}
+        accent
+        title={sgDetail?.type === "bug" ? "🐞 Bug Report" : "💡 Suggestion"}
+      >
+        {sgDetail && (
+          <>
+            <div
+              style={{
+                fontSize: 15,
+                color: P.txt,
+                lineHeight: 1.5,
+                marginBottom: 16,
+                background: P.bg,
+                borderRadius: 10,
+                padding: "12px 14px",
+                border: `1px solid ${P.bdrL}`
+              }}
+            >
+              {sgDetail.message}
+            </div>
+            <div style={{ fontSize: 12.5, color: P.mid, fontFamily: Ft.m, lineHeight: 2 }}>
+              <div><b style={{ color: P.txt }}>From:</b> {sgDetail.user_name}</div>
+              <div><b style={{ color: P.txt }}>Submitted:</b> {fmtDateFull((sgDetail.created_at || "").slice(0, 10))}</div>
+              <div>
+                <b style={{ color: P.txt }}>Cleared by:</b>{" "}
+                {sgDetail.cleared_by_name
+                  ? `${sgDetail.cleared_by_name} · ${fmtDateFull((sgDetail.cleared_at || "").slice(0, 10))}`
+                  : "Not yet cleared"}
+              </div>
+              <div>
+                <b style={{ color: P.txt }}>Outcome:</b>{" "}
+                {sgDetail.resolved
+                  ? `Resolved · ${fmtDateFull((sgDetail.resolved_at || "").slice(0, 10))}${sgDetail.resolved_by_name ? " by " + sgDetail.resolved_by_name : ""}`
+                  : "Not resolved yet"}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+              {!sgDetail.cleared_at && (
+                <Btn full sx={{ flex: 1 }} onClick={() => clearSuggestion(sgDetail.id)}>
+                  Clear
+                </Btn>
+              )}
+              <button
+                onClick={() => resolveSuggestion(sgDetail.id, !sgDetail.resolved)}
+                style={{
+                  flex: 1,
+                  padding: 12,
+                  borderRadius: 10,
+                  border: "none",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontFamily: Ft.b,
+                  background: sgDetail.resolved ? P.rBg : P.gBg,
+                  color: sgDetail.resolved ? P.red : P.grn
+                }}
+              >
+                {sgDetail.resolved ? "Mark Not Complete" : "Mark Complete"}
+              </button>
+            </div>
+          </>
+        )}
+      </Modal>
+
       <Nav
         tab={tab}
         set={t => {
@@ -3509,6 +3967,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
           if (t !== "admin") setAdPg("hub");
         }}
         admin={isA}
+        pendingCount={pendingSgCount}
       />
       <Toast m={toast.m} s={toast.s} />
     </div>
