@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { metersToMiles, reimbursement } from "./engines/money.js";
 import { getPayPeriod } from "./engines/payPeriod.js";
 import { fmtDate, fmtDateFull, today, thisYear } from "./engines/dates.js";
+import { crowMiles, projCoords, isPlausibleDriving } from "./engines/geo.js";
 
 // Supabase connection — configurable via env so we can point at a local copy
 // for safe testing; falls back to production. (The anon key is public by
@@ -163,21 +164,37 @@ async function geocode(address) {
   return null;
 }
 
-async function getDrivingMiles(from, to) {
+// Optional fromProj/toProj are the full project objects. When they carry
+// stored lat/lng we route with those directly instead of re-geocoding the
+// address text — geocoders (Photon especially) can't always find a specific
+// street address and silently snap to a town center, yielding an impossibly
+// short drive (this is what put Cummings->Green at 5.8 mi instead of 18.2).
+async function getDrivingMiles(from, to, fromProj, toProj) {
+  const aStored = projCoords(fromProj);
+  const bStored = projCoords(toProj);
+  // Straight-line floor: a real driving route can never be shorter than this.
+  // Null when either coordinate is unknown (then we can't judge plausibility).
+  const floor = crowMiles(aStored, bStored);
+
   try {
-    const cached = await api(`route_distances?from_address=eq.${encodeURIComponent(from)}&to_address=eq.${encodeURIComponent(to)}&select=miles&limit=1`);
+    // Newest cached value wins, so a corrected entry supersedes an old bad one.
+    const cached = await api(`route_distances?from_address=eq.${encodeURIComponent(from)}&to_address=eq.${encodeURIComponent(to)}&select=miles&order=verified_at.desc&limit=1`);
     if (cached && cached.length > 0) {
-      console.log("Cache hit:", from, "->", to, cached[0].miles);
-      return Number(cached[0].miles);
+      const cm = Number(cached[0].miles);
+      if (isPlausibleDriving(cm, floor)) {
+        console.log("Cache hit:", from, "->", to, cm);
+        return cm;
+      }
+      console.warn(`Ignoring impossible cached ${cm} mi (< straight-line ${floor?.toFixed(1)} mi) for ${from} -> ${to}; recomputing.`);
     }
   } catch (e) {
     console.error("Cache lookup error:", e);
   }
   try {
-    const a = await geocode(from);
+    const a = aStored || await geocode(from);
     if (!a) throw new Error(`Could not geocode: ${from}`);
-    await new Promise(r => setTimeout(r, 300));
-    const b = await geocode(to);
+    if (!aStored) await new Promise(r => setTimeout(r, 300));
+    const b = bStored || await geocode(to);
     if (!b) throw new Error(`Could not geocode: ${to}`);
     await new Promise(r => setTimeout(r, 300));
     const r = await fetch(
@@ -188,10 +205,16 @@ async function getDrivingMiles(from, to) {
     if (d.code !== "Ok" || !d.routes || d.routes.length === 0)
       throw new Error(`No route found: ${d.code || "unknown error"}`);
     const miles = metersToMiles(d.routes[0].distance);
+    // If the result is below the physical floor, a geocode went wrong — don't
+    // save a bad (low) number; fall through to manual entry instead.
+    if (!isPlausibleDriving(miles, floor)) {
+      console.warn(`Route ${miles} mi below straight-line ${floor?.toFixed(1)} mi — treating as bad geocode.`);
+      return null;
+    }
     try {
       await api("route_distances", {
         method: "POST",
-        headers: { ...H, Prefer: "resolution=merge-duplicates" },
+        headers: { Prefer: "resolution=merge-duplicates" },
         body: JSON.stringify({ from_address: from, to_address: to, miles })
       });
     } catch (e) {
@@ -788,7 +811,7 @@ export default function App() {
     const tgt = (isA && logForUser) ? users.find(u => u.id === logForUser) : user;
     setCalc(true);
     try {
-      let miles = await getDrivingMiles(fromP.address, toP.address);
+      let miles = await getDrivingMiles(fromP.address, toP.address, fromP, toP);
       if (!miles) {
         setCalc(false);
         setManualMod(true);
@@ -1063,10 +1086,10 @@ export default function App() {
     let reimb = Number(editT.reimbursement);
     if (edFr !== editT.from_project_id || edTo !== editT.to_project_id) {
       setCalc(true);
-      // getDrivingMiles takes ADDRESS STRINGS (it geocodes + caches internally),
-      // exactly like logTrip does. Previously this passed geocoded {lat,lng}
-      // objects, so the recalc silently failed and the trip kept its old miles.
-      const m = await getDrivingMiles(fP.address, tP.address);
+      // getDrivingMiles takes ADDRESS STRINGS plus the project objects, so it
+      // can prefer each project's stored coordinates over re-geocoding the
+      // address text (which is what produced wrong, too-short mileages).
+      const m = await getDrivingMiles(fP.address, tP.address, fP, tP);
       if (m) {
         miles = m;
         reimb = reimbursement(m, settings.irs_rate);
