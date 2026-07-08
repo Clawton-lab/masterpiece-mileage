@@ -614,6 +614,7 @@ export default function App() {
   const [pwErr, setPwErr] = useState("");
   const [pwSaving, setPwSaving] = useState(false);
   const [aErr, setAErr] = useState("");
+  const [aSaving, setASaving] = useState(false);
   const [projs, setProjs] = useState([]);
   const [trips, setTrips] = useState([]);
   const [settings, setSettings] = useState({
@@ -753,33 +754,43 @@ export default function App() {
     }
   };
 
-  const signup = async () => {
+  // First-time setup: an employee claims their existing profile with their
+  // current PIN and sets a password. Verified server-side (rpc/claim_account),
+  // then we log them straight in. No open sign-up — only known employees.
+  const setupAccount = async () => {
     setAErr("");
-    if (!aName.trim() || !aEmail.trim() || aPass.length < 8) {
-      setAErr("Fill all fields. Password must be at least 8 characters.");
+    const email = aEmail.trim().toLowerCase();
+    if (!email || !/^\d{4}$/.test(aPin) || aPass.length < 8) {
+      setAErr("Enter your work email, your current 4-digit PIN, and a password of at least 8 characters.");
       return;
     }
+    setASaving(true);
     try {
-      const d = await authSignUp(aEmail.trim().toLowerCase(), aPass, aName.trim());
-      if (!getSession()?.access_token) {
-        // Email confirmation required — no session yet.
-        setAErr("Account created. Check your email to confirm, then log in.");
-        setMode("login");
+      const res = await api("rpc/claim_account", {
+        method: "POST",
+        body: JSON.stringify({ p_email: email, p_pin: aPin, p_password: aPass })
+      });
+      const r = Array.isArray(res) ? res[0] : res;
+      if (!r || !r.ok) {
+        setAErr((r && r.error) || "Setup failed. Double-check your email and PIN.");
+        setASaving(false);
         return;
       }
-      const au = d.user || (await authGetUser());
-      const prof = au ? await api(`yard_users?id=eq.${au.id}&limit=1`) : [];
+      // Account is set — log in with the new password.
+      const au = await authPassword(email, aPass);
+      const prof = await api(`yard_users?id=eq.${au.id}&limit=1`);
       if (prof && prof[0]) {
         setUser(prof[0]);
-        setAPass("");
-        show(`Welcome, ${prof[0].name}!`);
+        setAPass(""); setAP("");
+        show(`Welcome, ${prof[0].name}! Your account is all set.`);
       } else {
-        setAErr("Account created — please log in.");
         setMode("login");
+        show("Account set up — please log in.");
       }
     } catch (e) {
-      setAErr(e.message || "Sign up failed.");
+      setAErr(e.message || "Setup failed.");
     }
+    setASaving(false);
   };
 
   const changePassword = async () => {
@@ -1562,7 +1573,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
               marginBottom: 24
             }}
           >
-            {["login", "signup"].map(m => (
+            {["login", "setup"].map(m => (
               <button
                 key={m}
                 onClick={() => {
@@ -1583,7 +1594,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                   boxShadow: mode === m ? P.sh1 : "none"
                 }}
               >
-                {m === "login" ? "Log In" : "Sign Up"}
+                {m === "login" ? "Log In" : "First-Time Setup"}
               </button>
             ))}
           </div>
@@ -1591,23 +1602,29 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
             className="mp-glow"
             style={{ padding: "20px 18px 22px", "--ge": P.red, "--gw": "rgba(196,30,42,.32)" }}
           >
-          {mode === "signup" && (
+          {mode === "setup" && (
             <>
-              <Fl label="Your Name">
-                <input
-                  style={iS}
-                  value={aName}
-                  onChange={e => setAN(e.target.value)}
-                  placeholder="e.g. Stephen"
-                />
-              </Fl>
-              <Fl label="Email">
+              <p style={{ fontSize: 12.5, color: P.mid, margin: "0 0 16px", fontFamily: Ft.b, lineHeight: 1.5 }}>
+                First time here? Confirm it's you with your work email and your
+                current 4-digit PIN, then create a password you'll use from now on.
+              </p>
+              <Fl label="Work Email">
                 <input
                   style={iS}
                   type="email"
                   value={aEmail}
                   onChange={e => setAE(e.target.value)}
-                  placeholder="you@email.com"
+                  placeholder="you@masterpiecelv.com"
+                />
+              </Fl>
+              <Fl label="Your Current PIN">
+                <input
+                  style={{ ...iS, textAlign: "center", fontSize: 20, letterSpacing: 10, fontFamily: Ft.m }}
+                  inputMode="numeric"
+                  maxLength={4}
+                  value={aPin}
+                  onChange={e => setAP(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                  placeholder="••••"
                 />
               </Fl>
               <Fl label="Create Password">
@@ -1617,7 +1634,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                   value={aPass}
                   onChange={e => setAPass(e.target.value)}
                   placeholder="At least 8 characters"
-                  onKeyDown={e => { if (e.key === "Enter") signup(); }}
+                  onKeyDown={e => { if (e.key === "Enter") setupAccount(); }}
                 />
               </Fl>
               {aErr && (
@@ -1632,8 +1649,8 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                   {aErr}
                 </div>
               )}
-              <Btn full onClick={signup}>
-                Create Account
+              <Btn full disabled={aSaving} onClick={setupAccount}>
+                {aSaving ? "Setting up..." : "Set Up My Account"}
               </Btn>
             </>
           )}
