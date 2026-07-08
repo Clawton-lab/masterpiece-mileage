@@ -657,6 +657,16 @@ function Nav({ tab, set, admin }) {
 export default function App() {
   const [user, setUser] = useState(null);
   const [mode, setMode] = useState("login");
+  // One-time heads-up on the login screen explaining the PIN -> password
+  // switch. Dismissal is remembered per-browser (there's no account context
+  // yet at the login screen to track this per-person).
+  const [showSetupNotice, setShowSetupNotice] = useState(() => {
+    try { return localStorage.getItem("mp_setup_notice_dismissed") !== "1"; } catch { return true; }
+  });
+  const dismissSetupNotice = () => {
+    setShowSetupNotice(false);
+    try { localStorage.setItem("mp_setup_notice_dismissed", "1"); } catch {}
+  };
   const [aName, setAN] = useState("");
   const [aPin, setAP] = useState("");
   const [aEmail, setAE] = useState("");
@@ -1762,6 +1772,45 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
               Employee Mileage Tracker
             </p>
           </div>
+
+          {showSetupNotice && (
+            <div
+              style={{
+                position: "relative",
+                background: P.aBg,
+                border: `1px solid rgba(194,116,10,.28)`,
+                borderRadius: 12,
+                padding: "13px 34px 13px 14px",
+                marginBottom: 20
+              }}
+            >
+              <button
+                onClick={dismissSetupNotice}
+                aria-label="Dismiss"
+                style={{
+                  position: "absolute",
+                  top: 8,
+                  right: 8,
+                  background: "none",
+                  border: "none",
+                  color: P.amb,
+                  cursor: "pointer",
+                  fontSize: 16,
+                  padding: 4,
+                  lineHeight: 1
+                }}
+              >
+                ✕
+              </button>
+              <div style={{ fontSize: 13, fontWeight: 700, color: P.amb, fontFamily: Ft.b, marginBottom: 4 }}>
+                🔐 We've switched to secure login
+              </div>
+              <div style={{ fontSize: 12.5, color: P.mid, fontFamily: Ft.b, lineHeight: 1.5 }}>
+                PINs are gone — everyone now signs in with their work email and a password they create. First time back? Tap <strong>First-Time Setup</strong> below, confirm it's you with your email and your old PIN, then set your new password.
+              </div>
+            </div>
+          )}
+
           <div
             style={{
               display: "flex",
