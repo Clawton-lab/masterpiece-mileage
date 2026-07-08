@@ -672,6 +672,7 @@ export default function App() {
   const [rcPreview, setRcPreview] = useState("");
   const [rcUp, setRcUp] = useState(false);
   const [rcForUser, setRcForUser] = useState("");
+  const [rcProj, setRcProj] = useState("");
   const [editRc, setEditRc] = useState(null);
   const [delRcMod, setDelRcMod] = useState(null);
 
@@ -925,15 +926,18 @@ export default function App() {
       return;
     }
     const tgt = (isA && rcForUser) ? users.find(u => u.id === rcForUser) : user;
+    const projSel = projs.find(p => p.id === rcProj);
     setRcUp(true);
     try {
       let imageUrl = editRc ? editRc.image_url : null;
       if (rcFile) {
         const blob = await compressImg(rcFile);
         const path = `${tgt.id}/${Date.now()}.jpg`;
+        // Upload as the logged-in user (session token), not a shared key.
+        const token = getSession()?.access_token || ANON;
         const up = await fetch(`${SB}/storage/v1/object/receipts/${path}`, {
           method: "POST",
-          headers: { apikey: KEY, Authorization: `Bearer ${KEY}`, "Content-Type": "image/jpeg" },
+          headers: { apikey: ANON, Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" },
           body: blob
         });
         if (!up.ok) throw new Error("upload failed");
@@ -945,6 +949,8 @@ export default function App() {
         receipt_date: rcDate,
         amount: amt,
         image_url: imageUrl,
+        project_id: rcProj || null,
+        project_name: projSel?.name || "",
         note: (isA && rcForUser && rcForUser !== user.id) ? `${rcNote ? rcNote + " " : ""}(logged by ${user.name})`.trim() : rcNote
       };
       if (editRc) {
@@ -960,6 +966,7 @@ export default function App() {
       setRcFile(null);
       setRcPreview("");
       setRcForUser("");
+      setRcProj("");
       setEditRc(null);
       show(editRc ? "Receipt updated" : `Receipt saved for ${tgt.name}`);
     } catch (e) {
@@ -974,6 +981,7 @@ export default function App() {
     setRcDate(r.receipt_date);
     setRcNote(r.note || "");
     setRcForUser(isA ? r.user_id : "");
+    setRcProj(r.project_id || "");
     setRcFile(null);
     setRcPreview(r.image_url || "");
     setRcMod(true);
@@ -988,6 +996,48 @@ export default function App() {
     } catch (e) {
       show("Error");
     }
+  };
+
+  // Printable reimbursement sheet: each receipt photo next to its details —
+  // employee, amount, the project it's linked to, date, and note.
+  const printReceipts = (list, label) => {
+    if (!list || list.length === 0) { show("No receipts to print"); return; }
+    const w = window.open("", "_blank");
+    if (!w) { show("Allow pop-ups to print receipts"); return; }
+    const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    const total = list.reduce((s, r) => s + Number(r.amount || 0), 0);
+    const cards = list.map(r => `
+      <div class="card">
+        ${r.image_url ? `<img src="${esc(r.image_url)}" alt="receipt" />` : `<div class="ph">🧾</div>`}
+        <div class="meta">
+          <div class="amt">$${Number(r.amount || 0).toFixed(2)}</div>
+          <div class="row"><span>Employee</span><b>${esc(r.user_name)}</b></div>
+          <div class="row"><span>Project</span><b>${esc(r.project_name || "—")}</b></div>
+          <div class="row"><span>Date</span><b>${esc(fmtDateFull(r.receipt_date))}</b></div>
+          ${r.note ? `<div class="note">${esc(r.note)}</div>` : ""}
+        </div>
+      </div>`).join("");
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Receipts${label ? " — " + esc(label) : ""}</title>
+      <style>
+        *{box-sizing:border-box;margin:0;padding:0;}
+        body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#1a1512;padding:22px;}
+        h1{font-size:20px;} .sub{color:#857b6e;font-size:12.5px;margin:2px 0 18px;}
+        .grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;}
+        .card{border:1px solid #e7ded0;border-radius:10px;padding:10px;display:flex;gap:12px;page-break-inside:avoid;break-inside:avoid;}
+        .card img{width:120px;height:120px;object-fit:cover;border-radius:8px;border:1px solid #e7ded0;flex-shrink:0;}
+        .ph{width:120px;height:120px;border-radius:8px;background:#f7f3ec;display:flex;align-items:center;justify-content:center;font-size:44px;flex-shrink:0;}
+        .meta{flex:1;min-width:0;} .amt{font-size:21px;font-weight:800;color:#1f7a45;margin-bottom:6px;}
+        .row{display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:1px dotted #ece4d6;}
+        .row span{color:#857b6e;} .row b{text-align:right;}
+        .note{margin-top:7px;font-size:11.5px;color:#6b6058;font-style:italic;}
+        @media print{ body{padding:10mm;} @page{margin:10mm;} }
+      </style></head><body>
+      <h1>Receipt Reimbursement</h1>
+      <div class="sub">${label ? esc(label) + " · " : ""}${list.length} receipt${list.length === 1 ? "" : "s"} · Total <b>$${total.toFixed(2)}</b></div>
+      <div class="grid">${cards}</div>
+      <script>window.onload=function(){setTimeout(function(){window.print();},350);};<\/script>
+      </body></html>`);
+    w.document.close();
   };
 
   const saveProj = async () => {
@@ -2054,9 +2104,16 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
               <h2 style={{ fontFamily: Ft.h, fontSize: 20, fontWeight: 700, margin: 0 }}>
                 Receipts
               </h2>
-              <Btn small onClick={() => { setEditRc(null); setRcAmt(""); setRcDate(today()); setRcNote(""); setRcFile(null); setRcPreview(""); setRcForUser(""); setRcMod(true); }}>
-                + Add Receipt
-              </Btn>
+              <div style={{ display: "flex", gap: 8 }}>
+                {myReceipts.length > 0 && (
+                  <Btn small color={P.blk} onClick={() => printReceipts(myReceipts, `${user.name} · all receipts`)}>
+                    🖨️ Print
+                  </Btn>
+                )}
+                <Btn small onClick={() => { setEditRc(null); setRcAmt(""); setRcDate(today()); setRcNote(""); setRcFile(null); setRcPreview(""); setRcForUser(""); setRcProj(""); setRcMod(true); }}>
+                  + Add Receipt
+                </Btn>
+              </div>
             </div>
             {myReceipts.length === 0 && (
               <div style={{ padding: 40, textAlign: "center", color: P.lt, fontFamily: Ft.m }}>
@@ -2093,7 +2150,12 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                   <div style={{ fontSize: 16, fontWeight: 700, fontFamily: Ft.h, color: P.grn }}>
                     ${Number(r.amount).toFixed(2)}
                   </div>
-                  <div style={{ fontSize: 11, color: P.lt, fontFamily: Ft.m, marginTop: 2 }}>
+                  {r.project_name && (
+                    <div style={{ display: "inline-block", fontSize: 10.5, fontWeight: 700, fontFamily: Ft.m, color: P.red, background: P.rBg, borderRadius: 5, padding: "2px 7px", marginTop: 3, letterSpacing: ".02em" }}>
+                      📁 {r.project_name}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 11, color: P.lt, fontFamily: Ft.m, marginTop: 3 }}>
                     {fmtDateFull(r.receipt_date)}
                     {r.note && ` · ${r.note}`}
                   </div>
@@ -2492,6 +2554,15 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                     >
                       🖨️ Print
                     </Btn>
+                    {reportReceipts.length > 0 && (
+                      <Btn
+                        small
+                        onClick={() => printReceipts(reportReceipts, reportUser === "all" ? "All employees" : users.find(u => u.id === reportUser)?.name)}
+                        color={P.grn}
+                      >
+                        🧾 Print Receipts ({reportReceipts.length})
+                      </Btn>
+                    )}
                   </div>
                 </div>
                 <div style={{ borderTop: `2px solid ${P.red}`, margin: "16px 0" }} />
@@ -3333,6 +3404,18 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
             </select>
           </Fl>
         )}
+        <Fl label="Project">
+          <select
+            style={{ ...iS, appearance: "none" }}
+            value={rcProj}
+            onChange={e => setRcProj(e.target.value)}
+          >
+            <option value="">— No project —</option>
+            {projs.filter(p => p.active !== false && !p.is_supplier).map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </Fl>
         <Fl label="Photo">
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <label style={{ flex: 1, minWidth: 130, cursor: "pointer" }}>
