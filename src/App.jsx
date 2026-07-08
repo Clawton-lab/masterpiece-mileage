@@ -369,6 +369,39 @@ function Logo({ dark }) {
   );
 }
 
+// A person's profile photo, or a colored initial when they haven't set one.
+// Same treatment for every role — employee, admin, or owner.
+function Avatar({ u, size = 30 }) {
+  const initial = (u?.name || "?").trim().charAt(0).toUpperCase();
+  const common = {
+    width: size,
+    height: size,
+    borderRadius: "50%",
+    flexShrink: 0,
+    boxShadow: "0 1px 3px rgba(0,0,0,.25)"
+  };
+  if (u?.avatar_url) {
+    return <img src={u.avatar_url} alt={u.name} style={{ ...common, objectFit: "cover" }} />;
+  }
+  return (
+    <div
+      style={{
+        ...common,
+        background: P.gRed,
+        color: "#fff",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: size * 0.42,
+        fontWeight: 700,
+        fontFamily: Ft.h
+      }}
+    >
+      {initial}
+    </div>
+  );
+}
+
 function Modal({ open, onClose, title, children, accent }) {
   if (!open) return null;
   return (
@@ -722,6 +755,7 @@ export default function App() {
   const [sgPopup, setSgPopup] = useState(null);
   const [sgPromptDone, setSgPromptDone] = useState(false);
   const [sgDetail, setSgDetail] = useState(null);
+  const [avUploading, setAvUploading] = useState(false);
 
   const show = useCallback(m => {
     setToast({ m, s: true });
@@ -989,6 +1023,36 @@ export default function App() {
     if (!f) return;
     setRcFile(f);
     setRcPreview(URL.createObjectURL(f));
+  };
+
+  // Every person manages their own profile photo — stored at
+  // avatars/{their-user-id}/..., enforced by storage policy (can't write into
+  // anyone else's folder). Same flow for every role.
+  const uploadAvatar = async file => {
+    if (!file) return;
+    setAvUploading(true);
+    try {
+      const blob = await compressImg(file);
+      const path = `${user.id}/${Date.now()}.jpg`;
+      const token = getSession()?.access_token || ANON;
+      const up = await fetch(`${SB}/storage/v1/object/avatars/${path}`, {
+        method: "POST",
+        headers: { apikey: ANON, Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" },
+        body: blob
+      });
+      if (!up.ok) throw new Error("upload failed");
+      const avatarUrl = `${SB}/storage/v1/object/public/avatars/${path}`;
+      await api(`yard_users?id=eq.${user.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ avatar_url: avatarUrl })
+      });
+      setUser(u => (u ? { ...u, avatar_url: avatarUrl } : u));
+      await load();
+      show("Profile picture updated");
+    } catch (e) {
+      show("Error updating profile picture");
+    }
+    setAvUploading(false);
   };
 
   const saveReceipt = async () => {
@@ -1883,9 +1947,26 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
         <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: P.gStripe }} />
         <Logo dark />
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 12, color: P.onInkMid, fontFamily: Ft.m }}>
-            {user.name}
-          </span>
+          <button
+            onClick={() => setTab("profile")}
+            className="mp-focusable"
+            title="View your profile"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 7,
+              background: "rgba(255,255,255,.08)",
+              border: `1px solid ${P.inkBdr}`,
+              borderRadius: 999,
+              padding: "3px 12px 3px 3px",
+              cursor: "pointer"
+            }}
+          >
+            <Avatar u={user} size={22} />
+            <span style={{ fontSize: 12, color: P.onInkMid, fontFamily: Ft.m, fontWeight: 600 }}>
+              {user.name}
+            </span>
+          </button>
           {isA && (
             <span
               className="mp-badge"
@@ -2567,30 +2648,61 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
             <h2 style={{ fontFamily: Ft.h, fontSize: 20, fontWeight: 700, margin: "0 0 16px" }}>
               Profile
             </h2>
-            <div className="mp-card" style={{ background: P.gCard, border: `1px solid ${P.bdr}`, borderRadius: 14, padding: 16, marginBottom: 24 }}>
-              <div style={{ fontSize: 17, fontWeight: 700, color: P.txt, fontFamily: Ft.h }}>
-                {user.name}
+            <div className="mp-card" style={{ background: P.gCard, border: `1px solid ${P.bdr}`, borderRadius: 14, padding: 16, marginBottom: 24, display: "flex", gap: 14, alignItems: "center" }}>
+              <Avatar u={user} size={64} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 17, fontWeight: 700, color: P.txt, fontFamily: Ft.h }}>
+                  {user.name}
+                </div>
+                <div style={{ fontSize: 12.5, color: P.lt, fontFamily: Ft.m, marginTop: 2 }}>
+                  {user.email}
+                </div>
+                <div
+                  style={{
+                    display: "inline-block",
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    fontFamily: Ft.m,
+                    textTransform: "uppercase",
+                    letterSpacing: ".06em",
+                    color: P.red,
+                    background: P.rBg,
+                    borderRadius: 6,
+                    padding: "3px 9px",
+                    marginTop: 9
+                  }}
+                >
+                  {RLBL[user.role]}
+                </div>
               </div>
-              <div style={{ fontSize: 12.5, color: P.lt, fontFamily: Ft.m, marginTop: 2 }}>
-                {user.email}
-              </div>
-              <div
-                style={{
-                  display: "inline-block",
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  fontFamily: Ft.m,
-                  textTransform: "uppercase",
-                  letterSpacing: ".06em",
-                  color: P.red,
-                  background: P.rBg,
-                  borderRadius: 6,
-                  padding: "3px 9px",
-                  marginTop: 9
-                }}
-              >
-                {RLBL[user.role]}
-              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, marginBottom: 24 }}>
+              <label style={{ flex: 1, minWidth: 130, cursor: avUploading ? "default" : "pointer" }}>
+                <div style={{ ...iS, textAlign: "center", color: P.mid, cursor: avUploading ? "default" : "pointer", opacity: avUploading ? 0.6 : 1 }}>
+                  📷 Take Photo
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  disabled={avUploading}
+                  style={{ display: "none" }}
+                  onChange={e => uploadAvatar(e.target.files[0])}
+                />
+              </label>
+              <label style={{ flex: 1, minWidth: 130, cursor: avUploading ? "default" : "pointer" }}>
+                <div style={{ ...iS, textAlign: "center", color: P.mid, cursor: avUploading ? "default" : "pointer", opacity: avUploading ? 0.6 : 1 }}>
+                  {avUploading ? "Uploading..." : "🖼️ Choose Photo"}
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  disabled={avUploading}
+                  style={{ display: "none" }}
+                  onChange={e => uploadAvatar(e.target.files[0])}
+                />
+              </label>
             </div>
 
             <h3 style={{ fontFamily: Ft.h, fontSize: 16, fontWeight: 700, margin: "0 0 4px" }}>
