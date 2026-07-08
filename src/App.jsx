@@ -589,12 +589,14 @@ function Toast({ m, s }) {
 }
 
 function Nav({ tab, set, admin, pendingCount }) {
+  // Profile is intentionally not a tab here — it lives only behind the
+  // name pill in the header, one tap away, so it doesn't compete for
+  // room with the core work tabs.
   const ts = [
     { k: "log", l: "Log Trip" },
     { k: "receipts", l: "Receipts" },
     { k: "trips", l: "My Trips" },
-    { k: "projects", l: "Projects" },
-    { k: "profile", l: "Profile" }
+    { k: "projects", l: "Projects" }
   ];
   if (admin) {
     ts.push({ k: "reports", l: "Reports" });
@@ -612,8 +614,8 @@ function Nav({ tab, set, admin, pendingCount }) {
         zIndex: 900,
         borderTop: `2px solid ${P.tan}`,
         display: "flex",
-        justifyContent: "space-around",
-        padding: "8px 0 env(safe-area-inset-bottom,8px)"
+        gap: 4,
+        padding: "10px 6px calc(10px + env(safe-area-inset-bottom, 0px))"
       }}
     >
       {ts.map(t => (
@@ -624,36 +626,41 @@ function Nav({ tab, set, admin, pendingCount }) {
           data-on={tab === t.k}
           style={{
             position: "relative",
+            flex: 1,
+            minWidth: 0,
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
-            gap: 2,
-            padding: "4px 5px",
-            background: "none",
+            justifyContent: "center",
+            gap: 3,
+            padding: "11px 2px",
+            borderRadius: 13,
+            background: tab === t.k ? P.gRed : "transparent",
             border: "none",
             cursor: "pointer",
-            color: tab === t.k ? P.red : P.lt,
-            borderTop:
-              tab === t.k ? `2px solid ${P.red}` : "2px solid transparent",
-            marginTop: -2,
-            fontSize: 10,
-            fontWeight: 700,
+            color: tab === t.k ? "#fff" : P.mid,
+            boxShadow: tab === t.k ? "0 4px 12px rgba(196,30,42,.32)" : "none",
+            fontSize: 10.5,
+            fontWeight: 800,
             fontFamily: Ft.m,
-            whiteSpace: "nowrap"
+            letterSpacing: ".01em"
           }}
         >
+          <span style={{ maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {t.l}
+          </span>
           {t.k === "admin" && pendingCount > 0 && (
             <span
               style={{
                 position: "absolute",
-                top: -3,
-                right: 2,
+                top: 4,
+                right: 4,
                 minWidth: 15,
                 height: 15,
                 padding: "0 3px",
                 borderRadius: 999,
-                background: P.gRed,
-                color: "#fff",
+                background: tab === t.k ? "#fff" : P.gRed,
+                color: tab === t.k ? P.red : "#fff",
                 fontSize: 9,
                 fontWeight: 700,
                 fontFamily: Ft.m,
@@ -666,7 +673,6 @@ function Nav({ tab, set, admin, pendingCount }) {
               {pendingCount}
             </span>
           )}
-          {t.l}
         </button>
       ))}
     </nav>
@@ -1706,11 +1712,9 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
 .mp-nav{background:rgba(255,253,250,.82);backdrop-filter:blur(16px) saturate(1.25);-webkit-backdrop-filter:blur(16px) saturate(1.25)}
 .mp-bar{backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4)}
 
-.mp-tab{position:relative;transition:color .16s ease,transform .12s ease}
+.mp-tab{position:relative;transition:background-color .16s ease,color .16s ease,transform .12s ease,box-shadow .16s ease}
 .mp-tab:hover{transform:translateY(-1px)}
 .mp-tab:active{transform:translateY(0)}
-.mp-tab::after{content:"";position:absolute;left:50%;bottom:-9px;height:2px;width:0;border-radius:2px;background:#c41e2a;transform:translateX(-50%);transition:width .22s cubic-bezier(.16,1,.3,1)}
-.mp-tab[data-on="true"]::after{width:78%}
 
 .mp-badge{font-family:'IBM Plex Mono',monospace;font-weight:700;text-transform:uppercase;letter-spacing:.08em;border-radius:999px;display:inline-flex;align-items:center;gap:4px;line-height:1}
 .mp-shimmer{background:linear-gradient(100deg,#efe8dc 30%,#f6f1e8 50%,#efe8dc 70%);background-size:220% 100%;animation:mpShimmer 1.4s ease-in-out infinite;border-radius:8px}
