@@ -3360,7 +3360,7 @@ input[aria-invalid="true"],select[aria-invalid="true"]{border-color:#c2740a!impo
                         <div style={{ display: "flex", gap: 14, marginTop: 13, paddingTop: 13, borderTop: `1px solid ${P.bdr}` }}>
                           <div style={{ flex: 1 }}>
                             <div style={{ fontSize: 9.5, fontFamily: Ft.m, color: P.lt, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>
-                              Mileage
+                              Reimbursement
                             </div>
                             <div style={{ fontSize: 15, fontWeight: 700, fontFamily: Ft.m, color: P.grn }}>
                               ${ut.reimb.toFixed(2)}
